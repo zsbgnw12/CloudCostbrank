@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+
+# Local Azure Container App exports (may contain secrets)
+azure-containerapp-*.yaml
+aca-patched-*.yaml
