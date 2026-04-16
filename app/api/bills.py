@@ -6,13 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_roles
 from app.database import get_db
 from app.models.monthly_bill import MonthlyBill
 from app.schemas.billing import MonthlyBillRead, MonthlyBillAdjust, MonthlyBillGenerate
 from app.services.bill_service import generate_bills
 from app.services.audit_service import log_operation
 
-router = APIRouter()
+# Monthly bills are aggregated (no cloud_account_id column) — restrict to
+# finance + admin rather than trying to split by account.
+router = APIRouter(dependencies=[Depends(require_roles("cloud_finance"))])
 
 
 @router.get("/", response_model=list[MonthlyBillRead])

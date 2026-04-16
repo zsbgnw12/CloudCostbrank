@@ -151,14 +151,23 @@ def upsert_billing_rows(rows: list[dict]):
             )
             logger.info("COPY %d rows into staging table", len(rows))
 
+            # Aggregate by unique key before insert: SUM cost / usage_quantity so
+            # multiple line-items sharing the same dedup key (common in GCP BQ and
+            # Azure Cost Details CSV exports) are summed, not overwritten.
             cur.execute(f"""
                 INSERT INTO billing_data ({cols_str})
-                SELECT {cols_str} FROM (
-                    SELECT DISTINCT ON (date, data_source_id, project_id, product, usage_type, region)
-                        {cols_str}
-                    FROM _billing_staging
-                    ORDER BY date, data_source_id, project_id, product, usage_type, region, cost DESC
-                ) AS deduped
+                SELECT
+                    date, provider, data_source_id, project_id,
+                    MAX(project_name) AS project_name,
+                    product, usage_type, region,
+                    SUM(cost) AS cost,
+                    SUM(usage_quantity) AS usage_quantity,
+                    MAX(usage_unit) AS usage_unit,
+                    MAX(currency) AS currency,
+                    (ARRAY_AGG(tags ORDER BY cost DESC))[1] AS tags,
+                    (ARRAY_AGG(additional_info ORDER BY cost DESC))[1] AS additional_info
+                FROM _billing_staging
+                GROUP BY date, provider, data_source_id, project_id, product, usage_type, region
                 ON CONFLICT (date, data_source_id, project_id, product, usage_type, region)
                 DO UPDATE SET
                     cost = EXCLUDED.cost,

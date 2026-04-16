@@ -3,6 +3,15 @@
 Reads from pre-aggregated billing_daily_summary for most queries.
 Falls back to billing_data only when summary columns are insufficient
 (region breakdown, unassigned project names).
+
+All public functions take `visible_ds: list[int] | None`:
+  - None  → admin/full access, no data-source filter.
+  - []    → no visibility, returns empty aggregation.
+  - list  → filter by `data_source_id IN (...)` BEFORE SUM to prevent leaking
+            other accounts' totals via percentages/growth math.
+
+The visibility list is also hashed into the Redis cache key so narrowed users
+never hit an admin-cached result.
 """
 
 import datetime as dt
@@ -14,6 +23,7 @@ from decimal import Decimal
 from sqlalchemy import func, case, text, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.sql.selectable import Select
 
 from app.models.billing import BillingData
 from app.models.daily_summary import BillingDailySummary
@@ -82,6 +92,14 @@ async def _cache_set(key: str, data, ttl: int = CACHE_TTL):
         pass
 
 
+def _scope_token(visible_ds: list[int] | None) -> str:
+    if visible_ds is None:
+        return "all"
+    if not visible_ds:
+        return "none"
+    return "ds-" + hashlib.md5(",".join(str(x) for x in sorted(visible_ds)).encode()).hexdigest()[:12]
+
+
 def _cache_key(*parts) -> str:
     raw = ":".join(str(p) for p in parts)
     return f"dashboard:{hashlib.md5(raw.encode()).hexdigest()}"
@@ -98,9 +116,16 @@ def _month_range(month: str):
 DS = BillingDailySummary
 
 
-async def get_overview(db: AsyncSession, month: str) -> dict:
+def _apply_scope(stmt: Select, visible_ds: list[int] | None, column) -> Select:
+    """Add `column IN (visible_ds)` to stmt unless visible_ds is None (admin)."""
+    if visible_ds is None:
+        return stmt
+    return stmt.where(column.in_(visible_ds))
+
+
+async def get_overview(db: AsyncSession, month: str, visible_ds: list[int] | None = None) -> dict:
     """Monthly overview using pre-aggregated summary table."""
-    ck = _cache_key("overview", month)
+    ck = _cache_key("overview", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
@@ -109,8 +134,11 @@ async def get_overview(db: AsyncSession, month: str) -> dict:
     year, mon = start.year, start.month
     prev_start = dt.date(year - 1, 12, 1) if mon == 1 else dt.date(year, mon - 1, 1)
 
-    res = await db.execute(
-        select(
+    if visible_ds is not None and not visible_ds:
+        total_cost = Decimal("0")
+        prev_month_cost = Decimal("0")
+    else:
+        stmt = select(
             func.coalesce(func.sum(
                 case((DS.date >= start, DS.total_cost), else_=literal_column("0"))
             ), 0).label("total_cost"),
@@ -118,10 +146,10 @@ async def get_overview(db: AsyncSession, month: str) -> dict:
                 case((DS.date < start, DS.total_cost), else_=literal_column("0"))
             ), 0).label("prev_cost"),
         ).where(DS.date >= prev_start, DS.date < end)
-    )
-    row = res.one()
-    total_cost = row.total_cost
-    prev_month_cost = row.prev_cost
+        stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
+        row = (await db.execute(stmt)).one()
+        total_cost = row.total_cost
+        prev_month_cost = row.prev_cost
 
     mom = float((total_cost - prev_month_cost) / prev_month_cost * 100) \
         if prev_month_cost and prev_month_cost > 0 else 0.0
@@ -141,12 +169,19 @@ async def get_overview(db: AsyncSession, month: str) -> dict:
     return result
 
 
-async def get_trend(db: AsyncSession, start: str, end: str, granularity: str) -> list[dict]:
+async def get_trend(
+    db: AsyncSession, start: str, end: str, granularity: str,
+    visible_ds: list[int] | None = None,
+) -> list[dict]:
     """Cost trend with provider breakdown — reads summary table."""
-    ck = _cache_key("trend", start, end, granularity)
+    ck = _cache_key("trend", start, end, granularity, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     start_date = dt.date.fromisoformat(f"{start}-01")
     y, m = map(int, end.split("-"))
@@ -169,8 +204,8 @@ async def get_trend(db: AsyncSession, start: str, end: str, granularity: str) ->
         .group_by("period", DS.provider)
         .order_by("period")
     )
-    res = await db.execute(stmt)
-    rows = res.all()
+    stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
+    rows = (await db.execute(stmt)).all()
 
     periods: dict[str, dict] = {}
     for period, provider, cost in rows:
@@ -185,11 +220,17 @@ async def get_trend(db: AsyncSession, start: str, end: str, granularity: str) ->
     return result
 
 
-async def get_by_provider(db: AsyncSession, month: str) -> list[dict]:
-    ck = _cache_key("by_provider", month)
+async def get_by_provider(
+    db: AsyncSession, month: str, visible_ds: list[int] | None = None,
+) -> list[dict]:
+    ck = _cache_key("by_provider", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     start, end = _month_range(month)
     stmt = (
@@ -197,8 +238,8 @@ async def get_by_provider(db: AsyncSession, month: str) -> list[dict]:
         .where(DS.date >= start, DS.date < end)
         .group_by(DS.provider)
     )
-    res = await db.execute(stmt)
-    rows = res.all()
+    stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
+    rows = (await db.execute(stmt)).all()
     total = sum(r.cost for r in rows) or Decimal("1")
     result = [
         {"provider": r.provider, "cost": r.cost, "percentage": round(float(r.cost / total * 100), 2)}
@@ -208,11 +249,17 @@ async def get_by_provider(db: AsyncSession, month: str) -> list[dict]:
     return result
 
 
-async def get_by_category(db: AsyncSession, month: str) -> list[dict]:
-    ck = _cache_key("by_category", month)
+async def get_by_category(
+    db: AsyncSession, month: str, visible_ds: list[int] | None = None,
+) -> list[dict]:
+    ck = _cache_key("by_category", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     start, end = _month_range(month)
     stmt = (
@@ -228,6 +275,7 @@ async def get_by_category(db: AsyncSession, month: str) -> list[dict]:
         .group_by(Category.id, Category.name, Category.markup_rate)
         .order_by(text("original_cost DESC"))
     )
+    stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
     res = await db.execute(stmt)
     result = [
         {
@@ -243,11 +291,18 @@ async def get_by_category(db: AsyncSession, month: str) -> list[dict]:
     return result
 
 
-async def get_by_project(db: AsyncSession, month: str, limit: int = 20) -> list[dict]:
-    ck = _cache_key("by_project", month, limit)
+async def get_by_project(
+    db: AsyncSession, month: str, limit: int = 20,
+    visible_ds: list[int] | None = None,
+) -> list[dict]:
+    ck = _cache_key("by_project", month, limit, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     start, end = _month_range(month)
     stmt = (
@@ -271,6 +326,7 @@ async def get_by_project(db: AsyncSession, month: str, limit: int = 20) -> list[
         .order_by(text("cost DESC"))
         .limit(limit)
     )
+    stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
     res = await db.execute(stmt)
     result = [
         {"project_id": r.project_id, "name": r.name, "provider": r.provider, "cost": r.cost}
@@ -280,20 +336,26 @@ async def get_by_project(db: AsyncSession, month: str, limit: int = 20) -> list[
     return result
 
 
-async def get_by_service(db: AsyncSession, month: str, provider: str | None, limit: int = 20) -> list[dict]:
-    ck = _cache_key("by_service", month, provider, limit)
+async def get_by_service(
+    db: AsyncSession, month: str, provider: str | None, limit: int = 20,
+    visible_ds: list[int] | None = None,
+) -> list[dict]:
+    ck = _cache_key("by_service", month, provider, limit, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
 
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
+
     start, end = _month_range(month)
 
-    # Get overall total first for accurate percentage calculation
     total_stmt = select(func.sum(DS.total_cost)).where(DS.date >= start, DS.date < end)
     if provider:
         total_stmt = total_stmt.where(DS.provider == provider)
-    total_res = await db.execute(total_stmt)
-    overall_total = total_res.scalar() or Decimal("1")
+    total_stmt = _apply_scope(total_stmt, visible_ds, DS.data_source_id)
+    overall_total = (await db.execute(total_stmt)).scalar() or Decimal("1")
 
     stmt = (
         select(DS.product, func.sum(DS.total_cost).label("cost"))
@@ -301,10 +363,10 @@ async def get_by_service(db: AsyncSession, month: str, provider: str | None, lim
     )
     if provider:
         stmt = stmt.where(DS.provider == provider)
+    stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
     stmt = stmt.group_by(DS.product).order_by(text("cost DESC")).limit(limit)
 
-    res = await db.execute(stmt)
-    rows = res.all()
+    rows = (await db.execute(stmt)).all()
     result = [
         {"product": r.product, "cost": r.cost, "percentage": round(float(r.cost / overall_total * 100), 2)}
         for r in rows
@@ -313,12 +375,18 @@ async def get_by_service(db: AsyncSession, month: str, provider: str | None, lim
     return result
 
 
-async def get_by_region(db: AsyncSession, month: str) -> list[dict]:
+async def get_by_region(
+    db: AsyncSession, month: str, visible_ds: list[int] | None = None,
+) -> list[dict]:
     """Region breakdown — must query billing_data (summary lacks region column)."""
-    ck = _cache_key("by_region", month)
+    ck = _cache_key("by_region", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     start, end = _month_range(month)
     stmt = (
@@ -330,18 +398,26 @@ async def get_by_region(db: AsyncSession, month: str) -> list[dict]:
         .group_by(BillingData.region, BillingData.provider)
         .order_by(text("cost DESC"))
     )
+    stmt = _apply_scope(stmt, visible_ds, BillingData.data_source_id)
     res = await db.execute(stmt)
     result = [{"region": r.region, "provider": r.provider, "cost": r.cost} for r in res.all()]
     await _cache_set(ck, result)
     return result
 
 
-async def get_top_growth(db: AsyncSession, period: str = "7d", limit: int = 10) -> list[dict]:
+async def get_top_growth(
+    db: AsyncSession, period: str = "7d", limit: int = 10,
+    visible_ds: list[int] | None = None,
+) -> list[dict]:
     """Top-growth projects using summary table, with project name resolution."""
-    ck = _cache_key("top_growth", period, limit)
+    ck = _cache_key("top_growth", period, limit, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     days = int(period.replace("d", "")) if "d" in period else 7
     today = dt.date.today()
@@ -380,6 +456,7 @@ async def get_top_growth(db: AsyncSession, period: str = "7d", limit: int = 10) 
             case((DS.date >= current_start, DS.total_cost), else_=literal_column("0"))
         ) > 1)
     )
+    stmt = _apply_scope(stmt, visible_ds, DS.data_source_id)
     res = await db.execute(stmt)
 
     results = []
@@ -401,12 +478,18 @@ async def get_top_growth(db: AsyncSession, period: str = "7d", limit: int = 10) 
     return result
 
 
-async def get_unassigned(db: AsyncSession, month: str) -> list[dict]:
+async def get_unassigned(
+    db: AsyncSession, month: str, visible_ds: list[int] | None = None,
+) -> list[dict]:
     """Unassigned projects — uses billing_data for project_name availability."""
-    ck = _cache_key("unassigned", month)
+    ck = _cache_key("unassigned", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
         return cached
+
+    if visible_ds is not None and not visible_ds:
+        await _cache_set(ck, [])
+        return []
 
     start, end = _month_range(month)
     stmt = (
@@ -433,6 +516,7 @@ async def get_unassigned(db: AsyncSession, month: str) -> list[dict]:
         .group_by(BillingData.project_id)
         .order_by(text("cost DESC"))
     )
+    stmt = _apply_scope(stmt, visible_ds, BillingData.data_source_id)
     res = await db.execute(stmt)
     result = [
         {"project_id": r.project_id, "name": r.name, "provider": r.provider, "cost": r.cost, "status": None}

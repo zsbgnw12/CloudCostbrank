@@ -10,11 +10,24 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_principal
+from app.auth.principal import Principal
+from app.auth.scope import visible_data_source_ids
 from app.database import get_db
 from app.models.billing import BillingData
 from app.schemas.billing import BillingListRead
 
 router = APIRouter()
+
+
+async def _scope_filter(stmt, db: AsyncSession, principal: Principal):
+    """Apply data_source_id whitelist for non-admin principals."""
+    visible_ds = await visible_data_source_ids(db, principal)
+    if visible_ds is None:
+        return stmt, True  # admin, full access
+    if not visible_ds:
+        return stmt.where(BillingData.data_source_id.in_([-1])), False
+    return stmt.where(BillingData.data_source_id.in_(visible_ds)), True
 
 
 def _parse_optional_date(value: str | None, *, param: str) -> dt.date | None:
@@ -70,12 +83,14 @@ async def billing_detail(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     ds = _parse_optional_date(date_start, param="date_start")
     de = _parse_optional_date(date_end, param="date_end")
     stmt = _apply_filters(
         select(*_LIST_COLUMNS), ds, de, provider, project_id, product,
     )
+    stmt, _ = await _scope_filter(stmt, db, principal)
     stmt = stmt.order_by(BillingData.date.desc(), BillingData.id).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(stmt)
     return result.all()
@@ -89,6 +104,7 @@ async def billing_detail_count(
     project_id: str | None = None,
     product: str | None = None,
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     """Return total row count for the current filter."""
     ds = _parse_optional_date(date_start, param="date_start")
@@ -97,6 +113,7 @@ async def billing_detail_count(
         select(func.count()).select_from(BillingData),
         ds, de, provider, project_id, product,
     )
+    stmt, _ = await _scope_filter(stmt, db, principal)
     result = await db.execute(stmt)
     return {"total": result.scalar_one()}
 

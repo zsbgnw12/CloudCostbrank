@@ -47,22 +47,27 @@ class GCPCollector(BaseCollector):
             if not self._ALLOWED_FIELD.match(val):
                 raise ValueError(f"Invalid BigQuery field name for {name}: {val!r}")
 
+        # Aggregate at BQ by the DB unique key so a single SKU's hundreds of
+        # intra-day line items collapse into one row with SUM(cost). Without this
+        # the UPSERT path in sync_service would have to do the summing itself,
+        # and we'd ship 100x more rows across the wire for nothing.
         query = f"""
         SELECT
             DATE(usage_start_time) as billed_date,
             project.id as project_id,
-            project.name as project_name,
+            ANY_VALUE(project.name) as project_name,
             service.description as service,
             sku.description as sku,
             IFNULL(location.region, 'global') as region,
-            {cost_field} as cost,
-            usage.{usage_field} as usage_quantity,
-            usage.pricing_unit as pricing_unit,
-            currency,
-            TO_JSON_STRING(labels) as labels
+            SUM({cost_field}) as cost,
+            SUM(usage.{usage_field}) as usage_quantity,
+            ANY_VALUE(usage.pricing_unit) as pricing_unit,
+            ANY_VALUE(currency) as currency,
+            TO_JSON_STRING(ANY_VALUE(labels)) as labels
         FROM `{project_id}.{dataset}.{table}`
         WHERE usage_start_time >= TIMESTAMP(@start_date)
           AND usage_start_time < TIMESTAMP(@end_date) + INTERVAL 1 DAY
+        GROUP BY billed_date, project_id, service, sku, region
         ORDER BY billed_date, project_id, service, sku
         """
 

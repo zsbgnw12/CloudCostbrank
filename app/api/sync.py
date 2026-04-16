@@ -6,13 +6,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_roles
 from app.database import get_db
 from app.models.sync_log import SyncLog
 from app.schemas.billing import SyncRequest, SyncLogRead
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+# Trigger & log routes require cloud_ops or cloud_admin.
+router = APIRouter(dependencies=[Depends(require_roles("cloud_ops"))])
 
 
 @router.get("/last")

@@ -1,22 +1,33 @@
-"""Azure multi-tenant SP consent onboarding.
+"""Azure multi-tenant SP consent onboarding — invite-based flow.
 
-Flow:
-1. POST /api/azure-consent/start  → returns an admin-consent URL for the customer admin
-2. POST /api/azure-consent/register → operator saves tenant_id + subscriptions after consent
-3. POST /api/azure-consent/verify/{account_id} → probes Cost Management with our SP
-4. GET  /api/azure-consent/subscriptions/{account_id} → auto-discover subs the SP can see
+Flow (new):
+1. POST /api/azure-consent/start       → operator creates invite, gets consent URL with state
+2. GET  /api/azure-consent/callback     → Microsoft redirects customer here; auto-creates account
+3. POST /api/azure-consent/verify/{id}  → operator verifies subscription discovery
+4. GET  /api/azure-consent/subscriptions/{id} → live subscription list
+
+Legacy (kept for rollback):
+5. POST /api/azure-consent/register     → manually register tenant_id
+
+Invite management:
+6. GET  /api/azure-consent/invites          → list all invites
+7. POST /api/azure-consent/invites/{id}/revoke  → cancel unused invite
 """
 
+import secrets
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.azure_consent_invite import AzureConsentInvite
 from app.models.cloud_account import CloudAccount
 from app.schemas.cloud_account import CloudAccountRead
 from app.services.audit_service import log_operation
@@ -24,12 +35,19 @@ from app.services.crypto_service import decrypt_to_dict, encrypt_dict
 
 router = APIRouter()
 
+# Callback is a separate router so it can be mounted WITHOUT auth dependencies.
+callback_router = APIRouter()
+
 
 # ─── request / response models ──────────────────────────────────────────
 
+class ConsentStartRequest(BaseModel):
+    account_name: str = Field(..., description="Display name for this customer")
+
+
 class ConsentStartResponse(BaseModel):
     consent_url: str
-    app_client_id: str
+    expires_at: str
     instructions: str
 
 
@@ -43,6 +61,19 @@ class VerifyResponse(BaseModel):
     ok: bool
     message: str
     discovered_subscriptions: list[dict] = Field(default_factory=list)
+
+
+class InviteRead(BaseModel):
+    id: int
+    state: str
+    account_name: str
+    status: str
+    cloud_account_id: int | None = None
+    created_by: int | None = None
+    created_at: str
+    expires_at: str
+    consumed_at: str | None = None
+    error_reason: str | None = None
 
 
 # ─── helpers ────────────────────────────────────────────────────────────
@@ -96,29 +127,93 @@ def _list_subscriptions(arm_token: str) -> list[dict]:
     return out
 
 
-# ─── endpoints ──────────────────────────────────────────────────────────
+def _invite_to_dict(inv: AzureConsentInvite) -> dict:
+    return {
+        "id": inv.id,
+        "state": inv.state,
+        "account_name": inv.account_name,
+        "status": inv.status,
+        "cloud_account_id": inv.cloud_account_id,
+        "created_by": inv.created_by,
+        "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+        "consumed_at": inv.consumed_at.isoformat() if inv.consumed_at else None,
+        "error_reason": inv.error_reason,
+    }
 
-@router.get("/start", response_model=ConsentStartResponse)
-async def consent_start():
-    """Build the admin-consent URL. Operator sends this link to the customer admin."""
+
+# ─── endpoints (authenticated, on main router) ─────────────────────────
+
+@router.post("/start", response_model=ConsentStartResponse)
+async def consent_start(body: ConsentStartRequest, db: AsyncSession = Depends(get_db)):
+    """Generate an invite with a unique state and return the admin-consent URL."""
     _require_global_app()
-    qs = urlencode({"client_id": settings.AZURE_APP_CLIENT_ID})
+
+    state = secrets.token_urlsafe(32)
+    invite = AzureConsentInvite(
+        state=state,
+        account_name=body.account_name,
+        status="pending",
+        expires_at=datetime.utcnow() + timedelta(hours=24),
+    )
+    db.add(invite)
+    await db.flush()
+
+    redirect_uri = f"{settings.PUBLIC_BASE_URL}/api/azure-consent/callback"
+    qs = urlencode({
+        "client_id": settings.AZURE_APP_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "state": state,
+    })
     url = f"https://login.microsoftonline.com/organizations/adminconsent?{qs}"
+
+    await log_operation(
+        db, action="create_consent_invite", target_type="azure_consent_invite",
+        target_id=invite.id, after_data={"account_name": body.account_name, "state": state},
+    )
+
     return ConsentStartResponse(
         consent_url=url,
-        app_client_id=settings.AZURE_APP_CLIENT_ID,
+        expires_at=invite.expires_at.isoformat(),
         instructions=(
-            "1) 客户全局管理员点击此链接并同意；\n"
-            "2) 客户在每个需要监控的订阅 → 访问控制(IAM) → 添加角色分配 → "
-            "角色选 'Cost Management Reader'，成员搜索我方应用名并选中；\n"
-            "3) 回到本系统填入客户 Tenant ID（可在 Azure 门户 → Microsoft Entra ID 首页看到）。"
+            "1) 将此链接发给客户全局管理员，客户在任意电脑上点击即可。\n"
+            "2) 客户登录自己 Azure AD → 同意，浏览器会自动跳回我们平台。\n"
+            "3) 客户继续在 Azure 门户给目标订阅分配 Cost Management Reader 角色。"
         ),
     )
 
 
+@router.get("/invites")
+async def list_invites(db: AsyncSession = Depends(get_db)):
+    """List all consent invites (operator view)."""
+    result = await db.execute(
+        select(AzureConsentInvite).order_by(AzureConsentInvite.created_at.desc())
+    )
+    invites = result.scalars().all()
+    return [_invite_to_dict(inv) for inv in invites]
+
+
+@router.post("/invites/{invite_id}/revoke")
+async def revoke_invite(invite_id: int, db: AsyncSession = Depends(get_db)):
+    """Revoke an unused invite."""
+    invite = await db.get(AzureConsentInvite, invite_id)
+    if not invite:
+        raise HTTPException(404, "Invite not found")
+    if invite.status != "pending":
+        raise HTTPException(400, f"Cannot revoke invite in status '{invite.status}'")
+    invite.status = "expired"
+    await log_operation(
+        db, action="revoke_consent_invite", target_type="azure_consent_invite",
+        target_id=invite.id, after_data={"status": "expired"},
+    )
+    return {"ok": True, "message": "邀请已作废"}
+
+
+# ─── legacy register (kept for rollback) ───────────────────────────────
+
 @router.post("/register", response_model=CloudAccountRead, status_code=201)
 async def consent_register(body: ConsentRegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Create a cloud_account in multi_tenant mode after customer consent."""
+    """Create a cloud_account in multi_tenant mode after customer consent (legacy manual flow)."""
     _require_global_app()
     secret = {
         "auth_mode": "multi_tenant",
@@ -139,9 +234,10 @@ async def consent_register(body: ConsentRegisterRequest, db: AsyncSession = Depe
         db, action="register_azure_multi_tenant", target_type="cloud_account",
         target_id=account.id, after_data={"name": body.name, "tenant_id": body.tenant_id},
     )
-    await db.commit()
     return account
 
+
+# ─── verify & subscriptions ────────────────────────────────────────────
 
 @router.post("/verify/{account_id}", response_model=VerifyResponse)
 async def consent_verify(account_id: int, db: AsyncSession = Depends(get_db)):
@@ -199,3 +295,93 @@ async def list_account_subscriptions(account_id: int, db: AsyncSession = Depends
     secret = decrypt_to_dict(account.secret_data)
     token = _acquire_arm_token(secret["tenant_id"])
     return {"subscriptions": _list_subscriptions(token)}
+
+
+# ─── callback (public, NO auth — on separate router) ──────────────────
+
+@callback_router.get("/callback")
+async def consent_callback(
+    tenant: str | None = Query(None),
+    state: str | None = Query(None),
+    admin_consent: str | None = Query(None),
+    error: str | None = Query(None),
+    error_description: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Microsoft redirects customer browser here after admin consent.
+    This endpoint is public (no auth) — mounted on callback_router."""
+    frontend = settings.FRONTEND_URL.rstrip("/")
+
+    # 1. Validate state
+    if not state:
+        return RedirectResponse(f"{frontend}/consent-fail?reason=invalid_state")
+
+    invite = await db.scalar(
+        select(AzureConsentInvite).where(AzureConsentInvite.state == state)
+    )
+    if not invite:
+        return RedirectResponse(f"{frontend}/consent-fail?reason=invalid_state")
+    if invite.status != "pending":
+        return RedirectResponse(f"{frontend}/consent-fail?reason=already_used")
+    if invite.expires_at < datetime.utcnow():
+        invite.status = "expired"
+        await db.commit()
+        return RedirectResponse(f"{frontend}/consent-fail?reason=expired")
+
+    # 2. Customer denied or error
+    if error or admin_consent != "True" or not tenant:
+        invite.status = "failed"
+        invite.error_reason = error_description or error or "unknown"
+        await db.commit()
+        reason = error or "denied"
+        return RedirectResponse(f"{frontend}/consent-fail?reason={reason}")
+
+    # 3. Idempotent: check if this tenant already has an account
+    existing_accounts = (await db.execute(
+        select(CloudAccount).where(
+            CloudAccount.provider == "azure",
+            CloudAccount.auth_mode == "multi_tenant",
+        )
+    )).scalars().all()
+
+    for acc in existing_accounts:
+        try:
+            sec = decrypt_to_dict(acc.secret_data)
+            if sec.get("tenant_id") == tenant:
+                # Reuse existing account
+                invite.status = "consumed"
+                invite.cloud_account_id = acc.id
+                invite.consumed_at = datetime.utcnow()
+                await db.commit()
+                return RedirectResponse(f"{frontend}/consent-success?account_id={acc.id}")
+        except Exception:
+            continue
+
+    # 4. Create new cloud_account
+    secret = {
+        "auth_mode": "multi_tenant",
+        "tenant_id": tenant,
+        "subscription_ids": [],
+    }
+    account = CloudAccount(
+        name=invite.account_name,
+        provider="azure",
+        secret_data=encrypt_dict(secret),
+        auth_mode="multi_tenant",
+        consent_status="granted",
+    )
+    db.add(account)
+    await db.flush()
+
+    invite.status = "consumed"
+    invite.cloud_account_id = account.id
+    invite.consumed_at = datetime.utcnow()
+
+    await log_operation(
+        db, action="consent_callback_auto_create", target_type="cloud_account",
+        target_id=account.id,
+        after_data={"name": invite.account_name, "tenant_id": tenant, "invite_id": invite.id},
+    )
+    await db.commit()
+
+    return RedirectResponse(f"{frontend}/consent-success?account_id={account.id}")

@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     AZURE_APP_CLIENT_ID: str = ""        # our multi-tenant app (Application) id
     AZURE_APP_CLIENT_SECRET: str = ""    # our client secret (stays server-side only)
 
+    # Azure Consent redirect
+    PUBLIC_BASE_URL: str = "http://localhost:8000"          # backend public origin (for redirect_uri)
+    FRONTEND_URL: str = "http://localhost:3000"             # frontend origin (for post-callback redirect)
+
     # App
     APP_TITLE: str = "CloudCost"
     APP_VERSION: str = "0.1.0"
@@ -49,6 +53,32 @@ class Settings(BaseSettings):
     # CORS：留空则 allow_origins=["*"] 且 allow_credentials=False（符合浏览器规范）。
     # 需要携带 Cookie 跨域时，设为逗号分隔白名单，例如：http://localhost:3000,https://app.example.com
     CORS_ORIGINS: str = ""
+
+    # ===== Casdoor (统一身份) =====
+    CASDOOR_ENDPOINT: str = "https://casdoor.ashyglacier-8207efd2.eastasia.azurecontainerapps.io"
+    CASDOOR_CLIENT_ID: str = ""
+    CASDOOR_CLIENT_SECRET: str = ""
+    CASDOOR_ORG: str = ""
+    CASDOOR_APP_NAME: str = "cloudcost"
+    CASDOOR_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback"
+    CASDOOR_FRONTEND_HOME: str = "http://localhost:3000/"
+
+    # ===== 云管自己的 JWT (HS256) =====
+    CC_JWT_SECRET: str = "change-me-to-a-long-random-string"
+    CC_JWT_ALGORITHM: str = "HS256"
+    CC_JWT_ACCESS_TTL: int = 900
+    CC_JWT_REFRESH_TTL: int = 7 * 24 * 3600
+    CC_JWT_ISSUER: str = "cloudcost"
+
+    # Cookie
+    CC_ACCESS_COOKIE: str = "cc_access_token"
+    CC_REFRESH_COOKIE: str = "cc_refresh_token"
+    CC_COOKIE_SECURE: bool = False
+    CC_COOKIE_SAMESITE: str = "lax"
+
+    # 鉴权强制开关(灰度)
+    AUTH_ENFORCED: bool = True
+    AUTH_ANONYMOUS_PREFIXES: str = "/api/health,/api/auth,/docs,/redoc,/openapi.json"
 
     model_config = {"env_file": str(_ENV_FILE), "extra": "ignore"}
 

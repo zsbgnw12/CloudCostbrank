@@ -46,7 +46,11 @@ INSERT_SQL = """
         usage_quantity = billing_data.usage_quantity + EXCLUDED.usage_quantity
 """
 
-TEMPLATE = "(%s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, 'USD', %s)"
+# region must be non-NULL to match the sync path ('global' sentinel) so that the
+# UNIQUE (date, ds, project, product, usage_type, region) constraint and ON CONFLICT
+# actually collapse duplicate keys. PG treats NULL != NULL under default unique
+# semantics, which in the past allowed one SKU-day to be stored as N rows.
+TEMPLATE = "(%s, %s, %s, %s, %s, %s, %s, 'global', %s, %s, %s, 'USD', %s)"
 
 
 def safe_decimal(val: str) -> Decimal:

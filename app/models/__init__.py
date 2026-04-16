@@ -14,6 +14,12 @@ from app.models.project_assignment_log import ProjectAssignmentLog
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.models.token_usage import TokenUsage
+from app.models.user import User
+from app.models.user_grant import UserCloudAccountGrant, UserProjectGrant
+from app.models.api_module_permission import ApiModulePermission
+from app.models.api_key import ApiKey
+from app.models.auth_refresh_session import AuthRefreshSession
+from app.models.azure_consent_invite import AzureConsentInvite
 
 __all__ = [
     "Category",
@@ -33,4 +39,11 @@ __all__ = [
     "Supplier",
     "SupplySource",
     "TokenUsage",
+    "User",
+    "UserCloudAccountGrant",
+    "UserProjectGrant",
+    "ApiModulePermission",
+    "ApiKey",
+    "AuthRefreshSession",
+    "AzureConsentInvite",
 ]

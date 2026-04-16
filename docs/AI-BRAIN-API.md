@@ -1,22 +1,72 @@
 # AI 大脑 · 对内程序调用接口说明
 
-本文档供 **内部 AI 大脑 / 自动化程序** 在回答 **费用、用量、账单、资源归属** 等问题时调用 CloudCost 后端使用。  
+本文档供 **内部 AI 大脑 / 自动化程序** 在回答 **费用、用量、账单、资源归属** 等问题时调用 CloudCost 后端使用。
 
-- **范围**：以 **只读（GET）** 为主，标注请求参数与响应 JSON 结构（与 FastAPI 序列化一致：`date` 多为 `YYYY-MM-DD` 字符串，`datetime` 为 ISO8601；金额/用量在 JSON 中一般为 **number**，若见字符串多为 Decimal 序列化，按数值解析即可）。  
-- **完整路由清单**：见 [API.md](./API.md)。  
-- **鉴权**：当前后端 **未实现统一 API Key / OAuth**。生产环境应由 **网关或内网策略** 限制仅 AI 网关可访问；下文仍建议仅开放「推荐接口」列表。
+- **范围**：以 **只读（GET）** 为主，标注请求参数与响应 JSON 结构（与 FastAPI 序列化一致：`date` 多为 `YYYY-MM-DD` 字符串，`datetime` 为 ISO8601；金额/用量在 JSON 中一般为 **number**，若见字符串多为 Decimal 序列化，按数值解析即可）。
+- **完整路由清单**：见 [API.md](./API.md)。
+- **鉴权**：当前后端已接入 **Casdoor + 云管自签 JWT + API Key 三路识别**。AI 大脑**必须**用专属 API Key 调用，见 §1.2。
 
 ---
 
 ## 1. 调用约定
 
+### 1.1 基础
+
 | 项 | 说明 |
 |----|------|
-| Base URL | 例：`https://orange-wave-09002e800.7.azurestaticapps.net/`，路径均以 `/api` 开头 |
+| Base URL（生产）| `https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io` |
+| 前端地址（非 API 调用点）| `https://orange-wave-09002e800.7.azurestaticapps.net/` |
+| 路径前缀 | 均以 `/api` 开头 |
 | 方法 | 下文推荐接口均为 **GET**（除健康检查外） |
 | 错误 | `4xx/5xx` 响应体多为 `{"detail": "..."}` 或列表（校验错误）；数据库不可达可能为 `503` |
+| `401 Anonymous not permitted here` | 未带合法凭据（Cookie / JWT / API Key）|
+| `403 Forbidden: missing required role` | 已登录但角色不满足该接口（如缺 `cloud_finance`）|
+| `403 Module '<x>' is disabled` | 该模块被管理员关停（`/api/api-permissions`）|
 | 分页 | 带 `page` / `page_size` 的接口：页码从 **1** 起 |
 | 大数据量 | 优先用 **聚合接口**（Dashboard、Metering summary）；明细用 `page_size` 控制，避免一次拉全表 |
+
+### 1.2 AI 大脑推荐的鉴权方式：API Key
+
+1. 管理员（`cloud_admin`）在云管前端 **API Keys** 页或调 `POST /api/api-keys/` 创建一个专用 Key。建议显式收窄：
+
+   ```json
+   {
+     "name": "ai-brain",
+     "allowed_modules": [
+       "dashboard","billing","metering","bills",
+       "service_accounts","projects","alerts","suppliers",
+       "categories","data_sources","exchange_rates","resources"
+     ],
+     "allowed_cloud_account_ids": null,
+     "expires_at": null
+   }
+   ```
+
+   - `allowed_modules`：白名单，只放**只读**业务模块；**切勿**包含 `sync / azure_deploy / azure_consent`。
+   - `allowed_cloud_account_ids`：`null` 代表继承 owner（`cloud_admin` 时 = 全量）；想只看某些云账号就给具体 id 列表。
+
+2. 接口响应里 `plaintext_key` 形如 `cck_XXXXXXXXX...`，**只此一次返回**，由 AI 网关保管。
+
+3. 调用时固定带 header：
+
+   ```http
+   X-API-Key: cck_XXXXXXXXX...
+   ```
+
+   所有 GET 响应都会按该 Key 的 `allowed_cloud_account_ids` **在聚合前**过滤，AI 看不到授权外的云账号数据。
+
+### 1.3 数据可见范围（重要）
+
+同一个 URL，不同 Key 返回的**数值不同**：
+- Dashboard 接口会按 Key 的可见云账号 **在 SUM 之前**加 WHERE，再算百分比/增长率；
+- Metering / Billing 明细会按可见数据源过滤；
+- 如果 Key 没有任何可见数据，返回空数组或零值（不是 403）。
+
+AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为全量。
+
+### 1.4 模块开关
+
+管理员可以通过 `PATCH /api/api-permissions/<module>` 全局关停某模块。关停后，无论 Key 有没有在 `allowed_modules` 里列该模块，调用都会 403。AI 应**优雅降级**，不要把 403 当成故障暴露给终端用户。
 
 ---
 
@@ -588,13 +638,23 @@
 
 ## 6. 禁止对 AI 大脑开放的接口（安全与副作用）
 
-以下类型 **不应** 加入 AI 可调工具列表：
+以下类型 **不应** 加入 AI 可调工具列表，且 AI 用的 API Key 不应在 `allowed_modules` 中列出对应模块：
 
-- **凭据**：`GET /api/service-accounts/{id}/credentials`
-- **写操作**：所有 `POST` / `PUT` / `PATCH` / `DELETE`（含同步、账单调整、供应商、告警规则、服务账号变更等）
-- **同步与任务**：`/api/sync/*` 中除 `GET /last` 外的接口
-- **导出敏感或过大**：按需限制；或仅允许服务端托管任务
-- **Azure 部署**：`/api/azure-deploy/*`（用户 ARM Token、资源创建）
+| 类别 | 路径 | 原因 |
+|---|---|---|
+| 凭据明文 | `GET /api/service-accounts/{id}/credentials` | 会解密云账号凭据 |
+| 写操作 | 所有 `POST` / `PUT` / `PATCH` / `DELETE` | 含同步、账单调整、供应商、告警规则、服务账号变更等 |
+| 同步触发 | `/api/sync/*`（除 `GET /last`） | 需 `cloud_ops` 角色，且会触发后台任务 |
+| Azure 部署 | `/api/azure-deploy/*` | 需 `cloud_admin`，涉及 ARM Token 与资源创建 |
+| 跨租户授权 | `/api/azure-consent/*` | 需 `cloud_admin`，改订阅授权态 |
+| 认证管理 | `/api/admin/users/*` · `/api/api-keys/*` · `/api/api-permissions/*` | 需 `cloud_admin`，管理员专用 |
+
+对应需要避开的模块名（`allowed_modules` 不要包含）：
+`sync`、`azure_deploy`、`azure_consent`。
+
+⚠️ `service_accounts` 模块下同时混合了只读（列表/详情/费用汇总/日报）和凭据（`/credentials`）两类接口，且路由层统一要求 `cloud_admin` 角色。如 AI 需要 §4.2–4.5 的账号维度数据：
+- 允许 `service_accounts` 模块，但**AI 工具清单不得包含 `/credentials`**
+- 或者改用 `projects`（§4.6）+ `metering/by-service` 组合替代账号维度问答
 
 ---
 
@@ -611,3 +671,35 @@
 ## 8. OpenAPI
 
 运行时可通过 **`GET /openapi.json`** 或 **`/docs`** 获取与部署版本一致的 Schema；字段以线上为准。若本文与 OpenAPI 冲突，**以 OpenAPI 为准**。
+
+`/openapi.json` 与 `/docs` 属于匿名白名单，不需要带 API Key。
+
+---
+
+## 9. 样例调用（curl）
+
+```bash
+BASE=https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io
+KEY=cck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 健康检查（匿名可访问）
+curl -s "$BASE/api/health"
+
+# 确认 Key 身份与可见范围
+curl -s -H "X-API-Key: $KEY" "$BASE/api/auth/me"
+
+# 数据新鲜度
+curl -s -H "X-API-Key: $KEY" "$BASE/api/sync/last"
+
+# 当月首页 bundle
+curl -s -H "X-API-Key: $KEY" "$BASE/api/dashboard/bundle?month=2026-04"
+
+# 明细分页
+curl -s -H "X-API-Key: $KEY" \
+  "$BASE/api/metering/detail?date_start=2026-04-01&date_end=2026-04-30&provider=aws&page=1&page_size=100"
+```
+
+`/api/auth/me` 响应里的 `visible_cloud_account_ids`：
+- `null` → 全量可见（admin owner 的无限制 Key）
+- `[]` → 零可见（Key 或 owner 没被授权任何云账号）
+- `list` → 该 Key 在数据层看得到的云账号 id 列表
