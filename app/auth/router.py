@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import casdoor_client
 from app.auth.dependencies import get_current_principal
-from app.auth.jwt_service import new_refresh_token, parse_refresh_token, sign_access_token
+from app.auth.jwt_service import JwtError, new_refresh_token, parse_refresh_token, sign_access_token, verify_cc_access
 from app.auth.principal import Principal
 from app.auth.scope import visible_cloud_account_ids
 from app.auth.user_service import upsert_from_casdoor
@@ -75,9 +75,14 @@ def _clear_cookies(response: Response) -> None:
     response.delete_cookie(settings.CC_REFRESH_COOKIE, path="/api/auth")
 
 
-async def _issue_session(db: AsyncSession, user: User, ip: str | None, user_agent: str | None) -> tuple[TokenPair, str]:
-    """Sign access token + persist refresh session. Returns (pair, refresh_plaintext)."""
-    access_token, access_ttl = sign_access_token(user.id, list(user.roles or []))
+async def _issue_session(db: AsyncSession, user: User, ip: str | None, user_agent: str | None, roles: list[str] | None = None) -> tuple[TokenPair, str]:
+    """Sign access token + persist refresh session. Returns (pair, refresh_plaintext).
+
+    `roles` overrides user.roles when provided (used to carry Casdoor token
+    roles into the cc_jwt without storing them in DB).
+    """
+    effective_roles = roles if roles is not None else list(user.roles or [])
+    access_token, access_ttl = sign_access_token(user.id, effective_roles)
 
     plaintext, jti, token_hash, refresh_ttl = new_refresh_token()
     db.add(AuthRefreshSession(
@@ -146,10 +151,15 @@ async def oauth_callback(
         roles = casdoor_client.extract_roles(info)
 
     ip = request.client.host if request.client else None
-    user = await upsert_from_casdoor(db, claims=claims, roles=roles, ip=ip)
+    user = await upsert_from_casdoor(db, claims=claims, ip=ip)
+
+    # Human login: Casdoor roles go straight into the cc_jwt.
+    # If Casdoor returned no roles, fall back to DB roles (covers machine
+    # accounts whose roles are set via SQL/admin API).
+    effective_roles = roles or list(user.roles or [])
 
     ua = request.headers.get("user-agent")
-    pair, refresh_plain = await _issue_session(db, user, ip, ua)
+    pair, refresh_plain = await _issue_session(db, user, ip, ua, roles=effective_roles)
     await db.commit()
 
     resp = RedirectResponse(settings.CASDOOR_FRONTEND_HOME)
@@ -193,10 +203,23 @@ async def refresh_token(
         raise HTTPException(401, "User disabled")
 
     # Rotate: revoke the old refresh session, issue a new one.
+    # Carry forward roles from the expiring access token (for human users
+    # whose roles live in Casdoor, not DB). Fall back to DB roles for machine
+    # accounts.
     session.revoked_at = now
+    carry_roles: list[str] | None = None
+    old_access = request.cookies.get(settings.CC_ACCESS_COOKIE)
+    if old_access:
+        try:
+            old_payload = verify_cc_access(old_access)
+            carry_roles = old_payload.get("roles") or None
+        except JwtError:
+            pass
+    effective_roles = carry_roles or list(user.roles or [])
+
     ua = request.headers.get("user-agent")
     ip = request.client.host if request.client else None
-    pair, refresh_plain = await _issue_session(db, user, ip, ua)
+    pair, refresh_plain = await _issue_session(db, user, ip, ua, roles=effective_roles)
     await db.commit()
 
     _set_cookies(response, pair.access_token, refresh_plain, pair.expires_in, settings.CC_JWT_REFRESH_TTL)

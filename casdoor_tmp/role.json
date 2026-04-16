@@ -1,0 +1,20 @@
+{
+  "status": "ok",
+  "msg": "",
+  "sub": "",
+  "name": "",
+  "data": {
+    "owner": "built-in",
+    "name": "cloud_admin",
+    "createdTime": "",
+    "displayName": "cloud_admin",
+    "description": "CloudCost cloud_admin",
+    "users": [],
+    "groups": null,
+    "roles": [],
+    "domains": null,
+    "isEnabled": true
+  },
+  "data2": null,
+  "data3": null
+}

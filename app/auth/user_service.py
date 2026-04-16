@@ -12,13 +12,17 @@ async def upsert_from_casdoor(
     db: AsyncSession,
     *,
     claims: dict,
-    roles: list[str],
     ip: str | None = None,
 ) -> User:
     """Create or refresh the local User shadow for a Casdoor identity.
 
     `claims` may be either the id_token payload or the userinfo response — we
     read `sub`, `name`/`preferred_username`, `email`, `displayName`, `avatar`.
+
+    Roles are NOT written here. For human users, roles come from the Casdoor
+    token and are carried in the cc_jwt directly. For machine apps
+    (client_credentials with empty token roles), roles fall back to
+    `users.roles` in DB — those are set once via SQL or admin API.
     """
     sub = str(claims.get("sub") or claims.get("id") or "")
     if not sub:
@@ -45,7 +49,7 @@ async def upsert_from_casdoor(
             email=email,
             display_name=display_name,
             avatar_url=avatar,
-            roles=roles,
+            roles=[],
             is_active=True,
             last_login_at=now,
             last_login_ip=ip,
@@ -55,16 +59,11 @@ async def upsert_from_casdoor(
         await db.refresh(user)
         return user
 
-    # Refresh cached fields on every login
+    # Refresh cached profile fields on every login — but never touch roles.
     user.username = str(username)
     user.email = email
     user.display_name = display_name
     user.avatar_url = avatar
-    # Only overwrite roles when Casdoor supplies a non-empty set. Empty means
-    # "Casdoor has no role mapping for this user on this app" — do not clobber
-    # roles that were granted locally (SQL bootstrap or /api/admin/users patch).
-    if roles:
-        user.roles = roles
     user.last_login_at = now
     user.last_login_ip = ip
     await db.flush()

@@ -109,12 +109,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         except CasdoorError:
             return None
 
-        roles = extract_roles(payload)
+        token_roles = extract_roles(payload)
         async with async_session_factory() as db:
             try:
-                user = await upsert_from_casdoor(db, claims=payload, roles=roles)
+                user = await upsert_from_casdoor(db, claims=payload)
                 await db.commit()
-                return Principal(user=user, method=AuthMethod.CASDOOR_JWT, roles=roles)
+                # Human users: trust Casdoor token roles.
+                # Machine apps (client_credentials, token roles empty): fall
+                # back to DB roles so they keep working.
+                effective_roles = token_roles or list(user.roles or [])
+                return Principal(user=user, method=AuthMethod.CASDOOR_JWT, roles=effective_roles)
             except Exception:
                 await db.rollback()
                 return None
