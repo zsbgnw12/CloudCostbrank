@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_roles
 from app.database import get_db
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryRead
 from app.services.audit_service import log_operation
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("cloud_admin"))])
 
 
 @router.get("/", response_model=list[CategoryRead])

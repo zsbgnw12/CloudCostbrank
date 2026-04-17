@@ -193,12 +193,15 @@ async def billing_export(
     provider: str | None = None,
     project_id: str | None = None,
     product: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     ds = _parse_optional_date(date_start, param="date_start")
     de = _parse_optional_date(date_end, param="date_end")
     stmt = _apply_filters(
         select(*_EXPORT_COLUMNS), ds, de, provider, project_id, product,
     )
+    stmt, _ = await _scope_filter(stmt, db, principal)
 
     return StreamingResponse(
         _stream_csv(stmt),

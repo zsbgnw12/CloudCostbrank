@@ -4,90 +4,206 @@
 
 - **范围**：以 **只读（GET）** 为主，标注请求参数与响应 JSON 结构（与 FastAPI 序列化一致：`date` 多为 `YYYY-MM-DD` 字符串，`datetime` 为 ISO8601；金额/用量在 JSON 中一般为 **number**，若见字符串多为 Decimal 序列化，按数值解析即可）。
 - **完整路由清单**：见 [API.md](./API.md)。
-- **鉴权**：当前后端已接入 **Casdoor + 云管自签 JWT + API Key 三路识别**。AI 大脑**必须**用专属 API Key 调用，见 §1.2。
 
 ---
 
-## 1. 调用约定
+## 1. 认证体系概述
 
-### 1.1 基础
+云管后端已接入 **Casdoor 统一认证**，所有请求（除匿名白名单外）必须携带合法凭据。
 
-| 项 | 说明 |
-|----|------|
-| Base URL（生产）| `https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io` |
-| 前端地址（非 API 调用点）| `https://orange-wave-09002e800.7.azurestaticapps.net/` |
-| 路径前缀 | 均以 `/api` 开头 |
-| 方法 | 下文推荐接口均为 **GET**（除健康检查外） |
-| 错误 | `4xx/5xx` 响应体多为 `{"detail": "..."}` 或列表（校验错误）；数据库不可达可能为 `503` |
-| `401 Anonymous not permitted here` | 未带合法凭据（Cookie / JWT / API Key）|
-| `403 Forbidden: missing required role` | 已登录但角色不满足该接口（如缺 `cloud_finance`）|
-| `403 Module '<x>' is disabled` | 该模块被管理员关停（`/api/api-permissions`）|
-| 分页 | 带 `page` / `page_size` 的接口：页码从 **1** 起 |
-| 大数据量 | 优先用 **聚合接口**（Dashboard、Metering summary）；明细用 `page_size` 控制，避免一次拉全表 |
+### 1.1 三种认证方式
 
-### 1.2 AI 大脑推荐的鉴权方式：API Key
+| 方式 | Header | 适用场景 | 角色来源 |
+|------|--------|----------|----------|
+| Casdoor OAuth Cookie | 浏览器自动携带 `cc_access_token` | 人类用户通过前端登录 | Casdoor token 中的 roles |
+| Casdoor Bearer Token | `Authorization: Bearer <token>` | 内部系统间调用（client_credentials） | token roles 非空时用 token；为空时 fallback 到 DB `users.roles` |
+| API Key | `X-API-Key: cck_xxx` | 三方对接 / 细粒度权限控制 | DB `users.roles`（owner 用户） |
 
-1. 管理员（`cloud_admin`）在云管前端 **API Keys** 页或调 `POST /api/api-keys/` 创建一个专用 Key。建议显式收窄：
+**AI 大脑 / 内部系统推荐使用方式 2（Casdoor Bearer Token）**，因为所有内部系统已在 Casdoor 注册了应用，统一走 `client_credentials` 拿 token 即可。
 
-   ```json
-   {
-     "name": "ai-brain",
-     "allowed_modules": [
-       "dashboard","billing","metering","bills",
-       "service_accounts","projects","alerts","suppliers",
-       "categories","data_sources","exchange_rates","resources"
-     ],
-     "allowed_cloud_account_ids": null,
-     "expires_at": null
-   }
-   ```
+### 1.2 四个角色
 
-   - `allowed_modules`：白名单，只放**只读**业务模块；**切勿**包含 `sync / azure_deploy / azure_consent`。
-   - `allowed_cloud_account_ids`：`null` 代表继承 owner（`cloud_admin` 时 = 全量）；想只看某些云账号就给具体 id 列表。
+| 角色 | 权限范围 |
+|------|----------|
+| `cloud_admin` | 全部功能 + 全量数据（超级角色，自动满足任何角色要求） |
+| `cloud_ops` | dashboard + 触发同步 |
+| `cloud_finance` | dashboard + 账单管理 |
+| `cloud_viewer` | dashboard 只读 |
 
-2. 接口响应里 `plaintext_key` 形如 `cck_XXXXXXXXX...`，**只此一次返回**，由 AI 网关保管。
+角色 → 前端页面映射
 
-3. 调用时固定带 header：
+  ┌────────────────────────────────────────────┬─────────────┬───────────────┬───────────────┬───────────────┐
+  │                  前端页面                  │ cloud_admin │   cloud_ops   │ cloud_finance │ cloud_viewer  │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 仪表盘 / (Dashboard)                       │     ✅      │      ✅       │      ✅       │      ✅       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 统计 /daily-report (日报/账单明细)         │     ✅      │      ✅       │      ✅       │      ✅       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 计量 /metering                             │     ✅      │      ✅       │      ✅       │      ✅       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 告警 /alerts                               │     ✅      │      ✅       │      ✅       │      ✅       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 货源管理 /accounts (云账号管理)            │ ✅ 可增删改 │ ❌ 只能看列表 │ ❌ 只能看列表 │ ❌ 只能看列表 │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 供应商管理 /suppliers                      │ ✅ 可增删改 │      ❌       │      ❌       │      ❌       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 模型管理 /azure-deploy                     │     ✅      │      ❌       │      ❌       │      ❌       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ Azure 接入 /azure-onboard                  │     ✅      │      ❌       │      ❌       │      ❌       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ 项目详情 /projects/[id]                    │  ✅ 可管理  │    ✅ 只读    │    ✅ 只读    │    ✅ 只读    │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ Header 中的 同步按钮                       │     ✅      │      ✅       │      ❌       │      ❌       │
+  ├────────────────────────────────────────────┼─────────────┼───────────────┼───────────────┼───────────────┤
+  │ Header 中的 账单管理（生成/调整/确认账单） │     ✅      │      ❌       │      ✅       │      ❌       │
+  └────────────────────────────────────────────┴─────────────┴───────────────┴───────────────┴───────────────┘
 
-   ```http
-   X-API-Key: cck_XXXXXXXXX...
-   ```
+  ---
+  各角色详细说明
 
-   所有 GET 响应都会按该 Key 的 `allowed_cloud_account_ids` **在聚合前**过滤，AI 看不到授权外的云账号数据。
+  cloud_admin — 超级管理员
 
-### 1.3 数据可见范围（重要）
+  能用所有页面的全部功能，额外还有：
+  - 用户管理、权限分配（/api/admin/users/*）
+  - 云账号增删改（/api/cloud-accounts/ POST/PUT/DELETE）
+  - 模块开关（/api/api-permissions/）
+  - API Key 管理
+  - Azure 部署和 OAuth 授权
+  - 数据范围：看到全量数据，不受 cloud_account_grant 限制
 
-同一个 URL，不同 Key 返回的**数值不同**：
-- Dashboard 接口会按 Key 的可见云账号 **在 SUM 之前**加 WHERE，再算百分比/增长率；
-- Metering / Billing 明细会按可见数据源过滤；
-- 如果 Key 没有任何可见数据，返回空数组或零值（不是 403）。
+  cloud_ops — 运维
+
+  - 仪表盘：✅ 全部看板数据
+  - 统计/日报：✅ 账单明细查看和导出
+  - 同步操作：✅ 触发数据同步、查看同步日志（/api/sync/*）
+  - 告警：✅ 查看
+  - 计量：✅ 查看
+  - ❌ 不能管理云账号/供应商/Azure 部署/账单
+  - 数据范围：仅限被授权的云账号（通过 UserCloudAccountGrant）
+
+  cloud_finance — 财务
+
+  - 仪表盘：✅ 全部看板数据
+  - 统计/日报：✅ 账单明细查看和导出
+  - 账单管理：✅ 生成、调整、确认、标记已付（/api/bills/*）
+  - 告警：✅ 查看
+  - 计量：✅ 查看
+  - ❌ 不能触发同步、不能管理云账号/供应商/Azure
+  - 数据范围：仅限被授权的云账号
+
+  cloud_viewer — 只读查看者
+
+  - 仪表盘：✅ 只读
+  - 统计/日报：✅ 只读 + 导出
+  - 告警：✅ 只读
+  - 计量：✅ 只读
+  - ❌ 其他所有管理操作都不可用
+  - 数据范围：仅限被授权的云账号
+
+  ---
+
+角色管理方式：
+- **人类用户**：在 Casdoor 后台 → Roles → 给用户分配角色，登录时自动带入
+- **机器应用**（client_credentials）：Casdoor token 不携带角色，管理员通过 SQL 设置 DB 中的 `users.roles`
+
+### 1.3 模块开关
+
+每个业务路由绑定一个模块名（如 `dashboard`、`billing`）。管理员可通过 `PATCH /api/api-permissions/<module>` 全局关停某模块，关停后所有身份调用都会 `403`。AI 应优雅降级，不要把 `403` 当故障。
+
+### 1.4 数据可见范围
+
+同一个 URL，不同身份返回的**数值不同**：
+- `cloud_admin`（无额外限制）→ 全量数据
+- 非 admin → 仅看到 `user_cloud_account_grants` 表里被授权的云账号数据
+- Dashboard 聚合接口在 **SUM 之前**加 WHERE 过滤，百分比/增长率基于过滤后数据重算
+- 如果没有可见数据，返回空数组或零值（不是 403）
 
 AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为全量。
 
-### 1.4 模块开关
+---
 
-管理员可以通过 `PATCH /api/api-permissions/<module>` 全局关停某模块。关停后，无论 Key 有没有在 `allowed_modules` 里列该模块，调用都会 403。AI 应**优雅降级**，不要把 403 当成故障暴露给终端用户。
+## 2. AI 大脑接入指南
+
+### 2.1 获取 Token（Casdoor client_credentials）
+
+```bash
+CASDOOR=https://casdoor.ashyglacier-8207efd2.eastasia.azurecontainerapps.io
+
+TOKEN=$(curl -s -X POST "$CASDOOR/api/login/oauth/access_token" \
+  -d "grant_type=client_credentials&client_id=<你的APP_CLIENT_ID>&client_secret=<你的APP_CLIENT_SECRET>" \
+  | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+```
+
+- token 默认有效期 **24 小时**，调用方应缓存并在过期前刷新
+- 首次使用该 token 调用云管 API 时，后端会自动在 `users` 表创建一条记录（`casdoor_sub=admin/<app_name>`，`roles=[]`）
+- **管理员需提前设置角色**（否则所有需要角色的接口返回 403）：
+  ```sql
+  UPDATE users SET roles='["cloud_admin"]'::jsonb WHERE casdoor_sub='admin/<app_name>';
+  ```
+
+### 2.2 调用接口
+
+```bash
+BASE=https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io
+
+# 确认身份与可见范围
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/auth/me"
+
+# 当月首页 bundle
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/dashboard/bundle?month=2026-04"
+
+# 明细分页
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/metering/detail?date_start=2026-04-01&date_end=2026-04-30&provider=aws&page=1&page_size=100"
+```
+
+### 2.3 `/api/auth/me` 响应说明
+
+```json
+{
+  "id": 4,
+  "username": "sales",
+  "email": "",
+  "display_name": "Sales App (M2M)",
+  "roles": ["cloud_admin"],
+  "visible_cloud_account_ids": null
+}
+```
+
+`visible_cloud_account_ids`：
+- `null` → 全量可见（`cloud_admin` 身份）
+- `[]` → 零可见（未被授权任何云账号）
+- `[1, 2]` → 只能看到这些云账号的数据
+
+### 2.4 错误码
+
+| HTTP 状态码 | 含义 | AI 应对 |
+|---|---|---|
+| `200` | 成功 | 正常解析 |
+| `401` | 未带凭据或 token 过期 | 刷新 token 后重试 |
+| `403 missing required role` | 角色不足 | 该接口对当前身份不可用，跳过 |
+| `403 Module 'x' is disabled` | 模块被管理员关停 | 优雅降级，不报故障 |
+| `422` | 参数校验失败 | 检查 Query 参数格式 |
+| `503` | 数据库不可达 | 稍后重试 |
 
 ---
 
-## 2. 接口分级
+## 3. 接口分级
 
 | 级别 | 含义 |
 |------|------|
 | **P0 推荐** | 费用总览、趋势、计量聚合、账单明细分页、数据新鲜度 |
 | **P1 补充** | 维度拆分（分类/区域/项目排行）、服务账号上下文、月度账单、告警阈值执行态 |
 | **P2 可选** | 资源清单、汇率、分类字典、导出类流式接口（适合落盘，不适合直接塞进模型上下文） |
-| **勿对 AI 开放** | 任何 **写操作**、**凭据解密**、**同步触发**、**删除**、**Azure 部署**、以及返回 **webhook/邮箱** 等敏感配置的接口 |
+| **禁止** | 任何 **写操作**、**凭据解密**、**同步触发**、**删除**、**Azure 部署**、以及返回 **webhook/邮箱** 等敏感配置的接口 |
 
 ---
 
-## 3. P0 推荐接口（入参 / 出参）
+## 4. P0 推荐接口（入参 / 出参）
 
-### 3.1 `GET /api/health`
+### 4.1 `GET /api/health`
 
-**用途**：连通性探测。
-
-**入参**：无。
+**用途**：连通性探测（匿名可访问）。
 
 **出参**：
 
@@ -97,11 +213,9 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.2 `GET /api/sync/last`
+### 4.2 `GET /api/sync/last`
 
-**用途**：回答「数据同步到什么时候」。
-
-**入参**：无。
+**用途**：回答「数据同步到什么时候」。模块：`sync`，角色：`cloud_ops`。
 
 **出参**：
 
@@ -109,21 +223,21 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 { "last_sync": "2026-04-12T08:30:00" | null }
 ```
 
-`last_sync` 为最近一次 **成功** 同步结束时间（ISO8601）；无记录或异常降级时为 `null`。
+`last_sync` 为最近一次 **成功** 同步结束时间（ISO8601）；无记录时为 `null`。
 
 ---
 
-### 3.3 `GET /api/dashboard/bundle`
+### 4.3 `GET /api/dashboard/bundle`
 
-**用途**：**单次请求**拿首页级总览（等价于分别调 overview + trend + by_provider + by_service，减少往返）。
+**用途**：**单次请求**拿首页级总览。模块：`dashboard`，角色：`cloud_viewer` / `cloud_ops` / `cloud_finance`（任一即可，`cloud_admin` 自动通过）。
 
 **入参（Query）**：
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `month` | string | 是 | `YYYY-MM`，统计月 |
-| `granularity` | string | 否 | `daily` \| `weekly` \| `monthly`，默认 `daily`（仅影响 `trend`） |
-| `service_limit` | int | 否 | 1–100，默认 10，`by_service` 返回条数上限 |
+| `granularity` | string | 否 | `daily` \| `weekly` \| `monthly`，默认 `daily` |
+| `service_limit` | int | 否 | 1–100，默认 10 |
 
 **出参**：
 
@@ -151,17 +265,15 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 }
 ```
 
-说明：`trend[].cost` 为该周期内各云厂商费用之和；`cost_by_provider` 为按厂商拆分。
-
 ---
 
-### 3.4 `GET /api/dashboard/overview`
+### 4.4 `GET /api/dashboard/overview`
 
 **用途**：只要月度总览卡片数据。
 
 **入参（Query）**：`month`（必填，`YYYY-MM`）。
 
-**出参**（对象，同 `bundle.overview`）：
+**出参**：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -172,9 +284,9 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.5 `GET /api/metering/summary`
+### 4.5 `GET /api/metering/summary`
 
-**用途**：按条件汇总 **billing_data** 用量/费用（与云同步明细一致，可筛选账号、货源、供应商）。
+**用途**：按条件汇总用量/费用。模块：`metering`，角色：任意登录即可。
 
 **入参（Query）**：
 
@@ -182,11 +294,11 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 |------|------|------|------|
 | `date_start` | string | 否 | `YYYY-MM-DD` |
 | `date_end` | string | 否 | `YYYY-MM-DD` |
-| `provider` | string | 否 | 如 `aws` / `gcp` / `azure` |
-| `product` | string | 否 | 产品/服务名，模糊一致于库中 `product` |
-| `account_id` | int | 否 | 服务账号（内部 `Project.id`） |
+| `provider` | string | 否 | `aws` / `gcp` / `azure` |
+| `product` | string | 否 | 产品/服务名 |
+| `account_id` | int | 否 | 服务账号 ID |
 | `supply_source_id` | int | 否 | 货源 ID |
-| `supplier_name` | string | 否 | 供应商名称；`"(未分组)"` 表示供应商「未分组」 |
+| `supplier_name` | string | 否 | 供应商名称 |
 | `data_source_id` | int | 否 | 数据源 ID |
 
 **出参**：
@@ -202,13 +314,11 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.6 `GET /api/metering/daily`
+### 4.6 `GET /api/metering/daily`
 
-**用途**：按日聚合费用与用量（折线/趋势）。
+**用途**：按日聚合费用与用量。入参同 `metering/summary`。
 
-**入参**：与 `metering/summary` 相同的 Query（`product` 会参与过滤）。
-
-**出参**：`DailyUsageStats[]`
+**出参**：
 
 ```json
 [
@@ -223,13 +333,11 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.7 `GET /api/metering/by-service`
+### 4.7 `GET /api/metering/by-service`
 
-**用途**：按 **product（服务）** 聚合用量与费用（Top N 分析）。
+**用途**：按服务聚合（Top N 分析）。入参同 summary（无 `product` 过滤）。
 
-**入参**：与 summary 类似，但 **无 `product` 维度过滤**（用于看全服务分布）。
-
-**出参**：`ServiceUsageStats[]`
+**出参**：
 
 ```json
 [
@@ -245,18 +353,11 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.8 `GET /api/metering/detail`
+### 4.8 `GET /api/metering/detail`
 
-**用途**：**原始明细行**分页（最细粒度，适合钻取）。
+**用途**：原始明细行分页。入参在 summary 基础上增加 `page`（默认 1）、`page_size`（默认 50，最大 500）。
 
-**入参（Query）**：在 summary 的筛选基础上增加：
-
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `page` | int | 1 | ≥1 |
-| `page_size` | int | 50 | 1–500 |
-
-**出参**：`UsageDetailRead[]`
+**出参**：
 
 ```json
 [
@@ -279,23 +380,17 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.9 `GET /api/metering/detail/count`
+### 4.9 `GET /api/metering/detail/count`
 
-**用途**：与 `detail` 同筛选条件下的总条数（分页用）。
+**用途**：与 `detail` 同筛选条件下的总条数。
 
-**入参**：同 `metering/detail`（不含 `page` / `page_size`）。
-
-**出参**：
-
-```json
-{ "total": 0 }
-```
+**出参**：`{ "total": 0 }`
 
 ---
 
-### 3.10 `GET /api/billing/detail`
+### 4.10 `GET /api/billing/detail`
 
-**用途**：计费明细列表（字段与 metering 明细接近，列表视图 **不含** `tags` / `additional_info` 重字段）。
+**用途**：计费明细列表。模块：`billing`，角色：任意登录。数据按可见数据源过滤。
 
 **入参（Query）**：
 
@@ -304,12 +399,12 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 | `date_start` | string | `YYYY-MM-DD` |
 | `date_end` | string | `YYYY-MM-DD` |
 | `provider` | string | 可选 |
-| `project_id` | string | 可选，外部项目 ID |
+| `project_id` | string | 可选 |
 | `product` | string | 可选 |
 | `page` | int | 默认 1 |
 | `page_size` | int | 默认 50，最大 500 |
 
-**出参**：`BillingListRead[]`
+**出参**：
 
 ```json
 [
@@ -333,49 +428,40 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 3.11 `GET /api/billing/detail/count`
+### 4.11 `GET /api/billing/detail/count`
 
 **用途**：与 `billing/detail` 相同筛选下的总行数。
-
-**入参**：同 `billing/detail`（无 page）。
 
 **出参**：`{ "total": 0 }`
 
 ---
 
-## 4. P1 补充接口（入参 / 出参）
+## 5. P1 补充接口
 
-### 4.1 Dashboard 其他只读拆分
+### 5.1 Dashboard 维度拆分
+
+模块：`dashboard`，角色：`cloud_viewer` / `cloud_ops` / `cloud_finance`。数据按可见数据源过滤。
 
 | 路径 | 入参（Query） | 出参摘要 |
 |------|----------------|----------|
-| `GET /api/dashboard/trend` | `start`、`end`：`YYYY-MM`；`granularity`：`daily`\|`weekly`\|`monthly` | `[{ "date", "cost", "cost_by_provider": { ... } }]` |
+| `GET /api/dashboard/trend` | `start`、`end`：`YYYY-MM`；`granularity` | `[{ "date", "cost", "cost_by_provider": {} }]` |
 | `GET /api/dashboard/by-provider` | `month` | `[{ "provider", "cost", "percentage" }]` |
 | `GET /api/dashboard/by-category` | `month` | `[{ "category_id", "name", "original_cost", "markup_rate", "final_cost" }]` |
 | `GET /api/dashboard/by-project` | `month`，`limit` 1–100 | `[{ "project_id", "name", "provider", "cost" }]` |
-| `GET /api/dashboard/by-service` | `month`，`provider` 可选，`limit` 1–100 | `[{ "product", "cost", "percentage" }]` |
+| `GET /api/dashboard/by-service` | `month`，`provider`，`limit` 1–100 | `[{ "product", "cost", "percentage" }]` |
 | `GET /api/dashboard/by-region` | `month` | `[{ "region", "provider", "cost" }]` |
 | `GET /api/dashboard/top-growth` | `period` 默认 `7d`，`limit` 1–50 | `[{ "project_id", "name", "current_cost", "previous_cost", "growth_pct" }]` |
-| `GET /api/dashboard/unassigned` | `month` | `[{ "project_id", "name", "provider", "cost", "status" }]`（`status` 可能为 null） |
+| `GET /api/dashboard/unassigned` | `month` | `[{ "project_id", "name", "provider", "cost", "status" }]` |
 
 ---
 
-### 4.2 `GET /api/service-accounts/`
+### 5.2 `GET /api/service-accounts/`
 
-**用途**：服务账号列表（人读「有哪些账号」）。
+**模块：`service_accounts`，角色：`cloud_admin`**。路径需带尾部斜杠。
 
-**入参（Query）**：
+**入参（Query）**：`provider`、`status`、`page`、`page_size`。
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `provider` | string | 可选 |
-| `status` | string | 可选，如 `active` / `inactive` / `standby` |
-| `page` | int | 默认 1 |
-| `page_size` | int | 默认 100，最大 500 |
-
-**注意**：路径需带尾部斜杠：`/api/service-accounts/`。
-
-**出参**：数组
+**出参**：
 
 ```json
 [
@@ -394,13 +480,9 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 4.3 `GET /api/service-accounts/{account_id}`
+### 5.3 `GET /api/service-accounts/{account_id}`
 
-**用途**：单账号详情（含状态变更历史；**仅字段名** `secret_fields`，无密钥内容）。
-
-**入参（Path）**：`account_id`（int）。
-
-**出参**：
+**出参**（含历史，**仅字段名** `secret_fields`，无密钥内容）：
 
 ```json
 {
@@ -431,9 +513,7 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 4.4 `GET /api/service-accounts/{account_id}/costs`
-
-**用途**：单账号在日期区间内的费用汇总（按服务、按日）。
+### 5.4 `GET /api/service-accounts/{account_id}/costs`
 
 **入参（Query）**：`start_date`、`end_date`（必填，`YYYY-MM-DD`）。
 
@@ -450,32 +530,18 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
     { "date": "2026-04-01", "cost": 0, "usage_quantity": 0 }
   ],
   "daily_by_service": [
-    {
-      "date": "2026-04-01",
-      "service": "EC2",
-      "cost": 0,
-      "usage_quantity": 0,
-      "usage_unit": "Hrs"
-    }
+    { "date": "2026-04-01", "service": "EC2", "cost": 0, "usage_quantity": 0, "usage_unit": "Hrs" }
   ]
 }
 ```
 
 ---
 
-### 4.5 `GET /api/service-accounts/daily-report`
+### 5.5 `GET /api/service-accounts/daily-report`
 
-**用途**：多账号按日、按产品汇总的费用（日报类问题）。
+**入参（Query）**：`start_date`、`end_date`（必填），`provider`（可选）。
 
-**入参（Query）**：
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `start_date` | 是 | `YYYY-MM-DD` |
-| `end_date` | 是 | `YYYY-MM-DD` |
-| `provider` | 否 | 云厂商 |
-
-**出参**：数组
+**出参**：
 
 ```json
 [
@@ -493,13 +559,13 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 4.6 `GET /api/projects/` 与 `GET /api/projects/{project_id}`
+### 5.6 `GET /api/projects/` 与 `GET /api/projects/{project_id}`
 
-**用途**：项目维度元数据（供应商、云厂商、外部 ID）。
+**模块：`projects`，角色：任意登录**。
 
-**列表入参（Query）**：`status`，`provider`，`page`，`page_size`。
+**列表入参**：`status`、`provider`、`page`、`page_size`。
 
-**出参（单项，`ProjectRead`）**：
+**出参**：
 
 ```json
 {
@@ -520,13 +586,13 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 4.7 `GET /api/bills/`
+### 5.7 `GET /api/bills/`
 
-**用途**：月度账单列表（含加价、调整、状态）。
+**模块：`bills`，角色：`cloud_finance`**。
 
-**入参（Query）**：`month`（`YYYY-MM`），`status`，`page`，`page_size`。
+**入参（Query）**：`month`（`YYYY-MM`）、`status`、`page`、`page_size`。
 
-**出参**：`MonthlyBillRead[]`
+**出参**：
 
 ```json
 [
@@ -547,23 +613,23 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 ]
 ```
 
-`status` 常见：`draft` / `confirmed` / `paid`。
+`status`：`draft` / `confirmed` / `paid`。
 
 ---
 
-### 4.8 `GET /api/bills/{bill_id}`
+### 5.8 `GET /api/bills/{bill_id}`
 
-**用途**：单张月度账单详情（同上结构，单对象）。
+单张月度账单详情（同上结构，单对象）。
 
 ---
 
-### 4.9 `GET /api/alerts/rule-status`
+### 5.9 `GET /api/alerts/rule-status`
 
-**用途**：各活跃规则在当前（或指定）月的 **实际值 vs 阈值**、是否触发。
+**模块：`alerts`，角色：任意登录**。
 
 **入参（Query）**：`month`（可选，`YYYY-MM`，默认当月）。
 
-**出参**：数组
+**出参**：
 
 ```json
 [
@@ -582,15 +648,13 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 ]
 ```
 
-`threshold_type` 含：`daily_absolute`、`monthly_budget`、`daily_increase_pct`、`monthly_minimum_commitment` 等（以后端模型为准）。
-
 ---
 
-### 4.10 `GET /api/suppliers/supply-sources/all`
+### 5.10 `GET /api/suppliers/supply-sources/all`
 
-**用途**：下拉/推理用：供应商与货源（云类型）对照。
+**模块：`suppliers`，角色：任意登录**。
 
-**入参（Query）**：`supplier_id`（可选，筛选某供应商）。
+**入参**：`supplier_id`（可选）。
 
 **出参**：
 
@@ -608,11 +672,11 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-### 4.11 `GET /api/metering/products`
+### 5.11 `GET /api/metering/products`
 
-**用途**：在筛选条件下出现过的 `product` 去重列表（做下拉或意图消歧）。
+**用途**：产品去重列表（下拉/消歧）。
 
-**入参**：`provider` 可选；另支持与 summary 相同的 `account_id`、`supply_source_id`、`supplier_name`、`data_source_id`。
+**入参**：`provider`、`account_id`、`supply_source_id`、`supplier_name`、`data_source_id`。
 
 **出参**：
 
@@ -622,84 +686,74 @@ AI 回答时应说明"当前视角内"的数据，避免把有限视角误报为
 
 ---
 
-## 5. P2 可选接口
+## 6. P2 可选接口
 
 | 路径 | 用途 | 备注 |
 |------|------|------|
 | `GET /api/categories/` | 费用分类字典 | 含 `markup_rate` |
 | `GET /api/exchange-rates/` | 汇率 | Query：`date`，`from_currency` |
 | `GET /api/data-sources/` | 数据源列表 | 与同步渠道、分类关联 |
-| `GET /api/resources/` | 资源清单分页 | `provider`，`project_id`，`resource_type` |
-| `GET /api/resources/{id}` | 单条资源 | 含 `monthly_cost` 等 |
+| `GET /api/resources/` | 资源清单分页 | `provider`，`project_id`，`resource_type`。数据按可见数据源过滤 |
+| `GET /api/resources/{id}` | 单条资源 | 含 `monthly_cost` |
 | `GET /api/billing/export` | CSV 流 | 大流量，适合工具落盘 |
 | `GET /api/metering/export` | CSV 流 | 同上 |
 
 ---
 
-## 6. 禁止对 AI 大脑开放的接口（安全与副作用）
+## 7. 禁止对 AI 开放的接口
 
-以下类型 **不应** 加入 AI 可调工具列表，且 AI 用的 API Key 不应在 `allowed_modules` 中列出对应模块：
+以下接口 **不应** 加入 AI 可调工具列表：
 
 | 类别 | 路径 | 原因 |
 |---|---|---|
 | 凭据明文 | `GET /api/service-accounts/{id}/credentials` | 会解密云账号凭据 |
-| 写操作 | 所有 `POST` / `PUT` / `PATCH` / `DELETE` | 含同步、账单调整、供应商、告警规则、服务账号变更等 |
-| 同步触发 | `/api/sync/*`（除 `GET /last`） | 需 `cloud_ops` 角色，且会触发后台任务 |
+| 写操作 | 所有 `POST` / `PUT` / `PATCH` / `DELETE` | 含同步触发、账单调整、告警规则变更、服务账号变更等 |
+| 同步触发 | `/api/sync/*`（除 `GET /last`） | 需 `cloud_ops`，触发后台任务 |
 | Azure 部署 | `/api/azure-deploy/*` | 需 `cloud_admin`，涉及 ARM Token 与资源创建 |
 | 跨租户授权 | `/api/azure-consent/*` | 需 `cloud_admin`，改订阅授权态 |
 | 认证管理 | `/api/admin/users/*` · `/api/api-keys/*` · `/api/api-permissions/*` | 需 `cloud_admin`，管理员专用 |
 
-对应需要避开的模块名（`allowed_modules` 不要包含）：
-`sync`、`azure_deploy`、`azure_consent`。
-
-⚠️ `service_accounts` 模块下同时混合了只读（列表/详情/费用汇总/日报）和凭据（`/credentials`）两类接口，且路由层统一要求 `cloud_admin` 角色。如 AI 需要 §4.2–4.5 的账号维度数据：
-- 允许 `service_accounts` 模块，但**AI 工具清单不得包含 `/credentials`**
-- 或者改用 `projects`（§4.6）+ `metering/by-service` 组合替代账号维度问答
+`service_accounts` 模块混合了只读和凭据接口，如 AI 需要 §5.2–5.5 的数据，**工具清单不得包含 `/credentials`**。
 
 ---
 
-## 7. 给 AI 编排器的建议调用顺序（示例）
+## 8. 建议调用顺序
 
-1. `GET /api/sync/last` → 说明数据新鲜度。  
-2. `GET /api/dashboard/bundle` 或 `metering/summary` → 总览与区间。  
-3. 需要钻取 → `metering/detail` + `detail/count` 分页，或 `billing/detail`。  
-4. 需要业务主体 → `service-accounts/` 或 `projects/`。  
-5. 需要「是否超支/承诺」→ `alerts/rule-status`。  
-
----
-
-## 8. OpenAPI
-
-运行时可通过 **`GET /openapi.json`** 或 **`/docs`** 获取与部署版本一致的 Schema；字段以线上为准。若本文与 OpenAPI 冲突，**以 OpenAPI 为准**。
-
-`/openapi.json` 与 `/docs` 属于匿名白名单，不需要带 API Key。
+1. `GET /api/health` → 连通性探测
+2. `GET /api/auth/me` → 确认身份与可见范围
+3. `GET /api/sync/last` → 数据新鲜度
+4. `GET /api/dashboard/bundle` 或 `metering/summary` → 总览
+5. 钻取 → `metering/detail` + `detail/count` 分页，或 `billing/detail`
+6. 业务主体 → `service-accounts/` 或 `projects/`
+7. 是否超支 → `alerts/rule-status`
 
 ---
 
-## 9. 样例调用（curl）
+## 9. 各模块权限速查
 
-```bash
-BASE=https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io
-KEY=cck_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+| 模块 | URL 前缀 | 所需角色 | 数据范围过滤 |
+|------|----------|----------|-------------|
+| `dashboard` | `/api/dashboard/*` | viewer / ops / finance | 按可见数据源 |
+| `billing` | `/api/billing/*` | 任意登录 | 按可见数据源 |
+| `metering` | `/api/metering/*` | 任意登录 | 支持筛选参数 |
+| `bills` | `/api/bills/*` | `cloud_finance` | 无 |
+| `sync` | `/api/sync/*` | `cloud_ops` | 无 |
+| `cloud_accounts` | `/api/cloud-accounts/*` | 读=任意；写=`cloud_admin` | 按可见云账号 |
+| `resources` | `/api/resources/*` | 任意登录 | 按可见数据源 |
+| `projects` | `/api/projects/*` | 任意登录 | 无 |
+| `alerts` | `/api/alerts/*` | 任意登录 | 无 |
+| `categories` | `/api/categories/*` | 任意登录 | 无 |
+| `suppliers` | `/api/suppliers/*` | 任意登录 | 无 |
+| `exchange_rates` | `/api/exchange-rates/*` | 任意登录 | 无 |
+| `data_sources` | `/api/data-sources/*` | 任意登录 | 无 |
+| `service_accounts` | `/api/service-accounts/*` | `cloud_admin` | 无 |
+| `azure_deploy` | `/api/azure-deploy/*` | `cloud_admin` | 无 |
+| `azure_consent` | `/api/azure-consent/*` | `cloud_admin` | 无 |
 
-# 健康检查（匿名可访问）
-curl -s "$BASE/api/health"
+**匿名可访问**（不需要任何凭据）：`/api/health`、`/api/auth/*`、`/docs`、`/redoc`、`/openapi.json`
 
-# 确认 Key 身份与可见范围
-curl -s -H "X-API-Key: $KEY" "$BASE/api/auth/me"
+---
 
-# 数据新鲜度
-curl -s -H "X-API-Key: $KEY" "$BASE/api/sync/last"
+## 10. OpenAPI
 
-# 当月首页 bundle
-curl -s -H "X-API-Key: $KEY" "$BASE/api/dashboard/bundle?month=2026-04"
-
-# 明细分页
-curl -s -H "X-API-Key: $KEY" \
-  "$BASE/api/metering/detail?date_start=2026-04-01&date_end=2026-04-30&provider=aws&page=1&page_size=100"
-```
-
-`/api/auth/me` 响应里的 `visible_cloud_account_ids`：
-- `null` → 全量可见（admin owner 的无限制 Key）
-- `[]` → 零可见（Key 或 owner 没被授权任何云账号）
-- `list` → 该 Key 在数据层看得到的云账号 id 列表
+运行时通过 `GET /openapi.json` 或 `/docs` 获取与部署版本一致的 Schema（匿名可访问）。若本文与 OpenAPI 冲突，**以 OpenAPI 为准**。

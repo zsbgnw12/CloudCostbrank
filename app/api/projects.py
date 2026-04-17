@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.principal import Principal
 from app.database import get_db
 from app.models.project import Project
 from app.models.project_assignment_log import ProjectAssignmentLog
@@ -57,6 +59,7 @@ async def list_projects(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
 ):
     stmt = (
         select(Project, SupplySource, Supplier)
@@ -74,7 +77,11 @@ async def list_projects(
 
 
 @router.post("/", response_model=ProjectRead, status_code=201)
-async def create_project(body: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(
+    body: ProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_admin")),
+):
     ss = await db.get(SupplySource, body.supply_source_id)
     if not ss:
         raise HTTPException(404, "货源不存在")
@@ -91,7 +98,11 @@ async def create_project(body: ProjectCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
-async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def get_project(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
     row = await db.execute(
         select(Project, SupplySource, Supplier)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
@@ -106,7 +117,12 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{project_id}", response_model=ProjectRead)
-async def update_project(project_id: int, body: ProjectUpdate, db: AsyncSession = Depends(get_db)):
+async def update_project(
+    project_id: int,
+    body: ProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_admin")),
+):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -125,7 +141,11 @@ async def update_project(project_id: int, body: ProjectUpdate, db: AsyncSession 
 
 
 @router.post("/{project_id}/activate", response_model=ProjectRead)
-async def activate_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def activate_project(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_admin")),
+):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -140,7 +160,11 @@ async def activate_project(project_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{project_id}/suspend", response_model=ProjectRead)
-async def suspend_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def suspend_project(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_admin")),
+):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -155,7 +179,11 @@ async def suspend_project(project_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{project_id}/assignment-logs", response_model=list[ProjectAssignmentLogRead])
-async def assignment_logs(project_id: int, db: AsyncSession = Depends(get_db)):
+async def assignment_logs(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "Project not found")

@@ -10,6 +10,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_principal
+from app.auth.principal import Principal
+from app.auth.scope import visible_data_source_ids
 from app.database import get_db
 from app.models.billing import BillingData
 from app.models.project import Project
@@ -23,6 +26,16 @@ from app.schemas.metering import (
 )
 
 router = APIRouter()
+
+
+async def _principal_scope(stmt, db: AsyncSession, principal: Principal):
+    """Apply data_source_id whitelist for non-admin principals."""
+    visible_ds = await visible_data_source_ids(db, principal)
+    if visible_ds is None:
+        return stmt  # admin, full access
+    if not visible_ds:
+        return stmt.where(BillingData.data_source_id.in_([-1]))
+    return stmt.where(BillingData.data_source_id.in_(visible_ds))
 
 _ACCOUNT_ID_QUERY = Query(
     None,
@@ -116,6 +129,7 @@ async def metering_summary(
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = _apply_filters(
         select(
@@ -133,6 +147,7 @@ async def metering_summary(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     row = (await db.execute(stmt)).one()
     return UsageSummary(
         total_cost=row.total_cost,
@@ -153,6 +168,7 @@ async def metering_daily(
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     base = (
         select(
@@ -171,6 +187,7 @@ async def metering_daily(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     stmt = stmt.group_by(BillingData.date).order_by(BillingData.date)
     rows = (await db.execute(stmt)).all()
     return [
@@ -194,6 +211,7 @@ async def metering_by_service(
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     base = (
         select(
@@ -213,6 +231,7 @@ async def metering_by_service(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     stmt = stmt.group_by(BillingData.product).order_by(func.sum(BillingData.usage_quantity).desc())
     rows = (await db.execute(stmt)).all()
     return [
@@ -235,6 +254,7 @@ async def metering_product_list(
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = (
         select(func.distinct(BillingData.product))
@@ -251,6 +271,7 @@ async def metering_product_list(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     rows = (await db.execute(stmt)).scalars().all()
     return [{"product": p} for p in rows]
 
@@ -268,6 +289,7 @@ async def metering_detail(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = _apply_filters(
         select(
@@ -293,6 +315,7 @@ async def metering_detail(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     stmt = (
         stmt.order_by(BillingData.date.desc(), BillingData.id.desc())
         .offset((page - 1) * page_size)
@@ -313,6 +336,7 @@ async def metering_detail_count(
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = _apply_filters(
         select(func.count()).select_from(BillingData),
@@ -325,6 +349,7 @@ async def metering_detail_count(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     result = await db.execute(stmt)
     return {"total": result.scalar_one()}
 
@@ -390,6 +415,8 @@ async def metering_export(
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = _apply_filters(
         select(
@@ -414,6 +441,7 @@ async def metering_export(
         supplier_name=supplier_name,
         data_source_id=data_source_id,
     )
+    stmt = await _principal_scope(stmt, db, principal)
     return StreamingResponse(
         _stream_csv(stmt),
         media_type="text/csv",

@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.principal import Principal
 from app.database import get_db
 from app.models.alert import AlertRule, AlertHistory, Notification
 from app.models.billing import BillingData
@@ -26,13 +28,20 @@ router = APIRouter()
 # ─── Rules CRUD ────────────────────────────────────────────────
 
 @router.get("/rules/", response_model=list[AlertRuleRead])
-async def list_rules(db: AsyncSession = Depends(get_db)):
+async def list_rules(
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
     result = await db.execute(select(AlertRule).order_by(AlertRule.id))
     return result.scalars().all()
 
 
 @router.post("/rules/", response_model=AlertRuleRead, status_code=201)
-async def create_rule(body: AlertRuleCreate, db: AsyncSession = Depends(get_db)):
+async def create_rule(
+    body: AlertRuleCreate,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_ops")),
+):
     rule = AlertRule(**body.model_dump())
     db.add(rule)
     await db.commit()
@@ -41,7 +50,12 @@ async def create_rule(body: AlertRuleCreate, db: AsyncSession = Depends(get_db))
 
 
 @router.put("/rules/{rule_id}", response_model=AlertRuleRead)
-async def update_rule(rule_id: int, body: AlertRuleUpdate, db: AsyncSession = Depends(get_db)):
+async def update_rule(
+    rule_id: int,
+    body: AlertRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_ops")),
+):
     rule = await db.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
@@ -53,7 +67,11 @@ async def update_rule(rule_id: int, body: AlertRuleUpdate, db: AsyncSession = De
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_rule(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(require_roles("cloud_ops")),
+):
     rule = await db.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
@@ -66,6 +84,7 @@ async def alert_history(
     rule_id: int | None = None,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
 ):
     stmt = select(AlertHistory).order_by(AlertHistory.id.desc()).limit(limit)
     if rule_id:
@@ -81,6 +100,7 @@ async def list_notifications(
     unread_only: bool = False,
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
 ):
     stmt = select(Notification).order_by(Notification.id.desc()).limit(limit)
     if unread_only:
@@ -90,7 +110,10 @@ async def list_notifications(
 
 
 @router.get("/notifications/unread-count")
-async def unread_count(db: AsyncSession = Depends(get_db)):
+async def unread_count(
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
     result = await db.execute(
         select(func.count()).select_from(Notification).where(Notification.is_read.is_(False))
     )
@@ -98,7 +121,11 @@ async def unread_count(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/notifications/{notification_id}/read", status_code=204)
-async def mark_read(notification_id: int, db: AsyncSession = Depends(get_db)):
+async def mark_read(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
     notif = await db.get(Notification, notification_id)
     if not notif:
         raise HTTPException(404, "Notification not found")
@@ -107,7 +134,10 @@ async def mark_read(notification_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/notifications/read-all", status_code=204)
-async def mark_all_read(db: AsyncSession = Depends(get_db)):
+async def mark_all_read(
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
     result = await db.execute(
         select(Notification).where(Notification.is_read.is_(False))
     )
@@ -146,6 +176,7 @@ class RuleStatus(BaseModel):
 async def rule_status(
     month: str = Query(None, description="YYYY-MM, defaults to current month"),
     db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
 ):
     """Return progress status for ALL active rules with a target project.
     For alerts (daily_absolute, monthly_budget, daily_increase_pct):

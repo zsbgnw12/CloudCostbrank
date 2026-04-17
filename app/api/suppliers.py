@@ -5,13 +5,14 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_roles
 from app.database import get_db
 from app.models.project import Project
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.services.default_supply_sources import RESERVED_UNASSIGNED_SUPPLIER_NAME
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("cloud_admin"))])
 
 
 class SupplierRead(BaseModel):
