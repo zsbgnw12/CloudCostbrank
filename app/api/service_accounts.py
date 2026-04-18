@@ -8,18 +8,20 @@ import io
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import require_roles
 from app.database import get_db
 from app.models.billing import BillingData
 from app.models.cloud_account import CloudAccount
 from app.models.data_source import DataSource
 from app.models.project import Project
 from app.models.project_assignment_log import ProjectAssignmentLog
+from app.models.project_customer_assignment import ProjectCustomerAssignment
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.services.crypto_service import encrypt_dict, decrypt_to_dict
@@ -80,6 +82,9 @@ class ServiceAccountUpdate(BaseModel):
     secret_data: dict[str, Any] | None = None
     notes: str | None = None
     order_method: str | None = None
+    # 客户编号全量覆盖语义：None=不动；[]=清空；[...]=替换为该集合。
+    # 触发 _recompute_status（inactive 不动；非空→active；空→standby）。
+    customer_codes: list[str] | None = None
 
     @field_validator("name", "external_project_id", mode="before")
     @classmethod
@@ -109,6 +114,7 @@ class ServiceAccountListItem(BaseModel):
     external_project_id: str
     status: str
     order_method: str | None = None
+    customer_codes: list[str] = []
     created_at: dt.datetime
 
 
@@ -119,6 +125,7 @@ class HistoryItem(BaseModel):
     from_status: str | None
     to_status: str | None
     operator: str | None
+    customer_code: str | None = None
     notes: str | None
     created_at: dt.datetime
 
@@ -135,9 +142,55 @@ class ServiceAccountDetail(BaseModel):
     status: str
     notes: str | None
     order_method: str | None = None
+    customer_codes: list[str] = []
     secret_fields: list[str]
     created_at: dt.datetime
     history: list[HistoryItem]
+
+
+# ─── Sales-sync payloads ──────────────────────────────────────
+
+class SalesAssignmentItem(BaseModel):
+    customer_code: str
+    supplier_name: str
+    provider: str
+    external_project_id: str
+
+
+class SalesSyncBody(BaseModel):
+    """销售系统批量下发客户 ↔ 服务账号 关联。
+
+    mode=full: 对 scope_customer_codes 这一批做差分（多删少插）；未列入 scope 的
+      客户编号不动。
+    mode=patch: 仅做 upsert，不删除任何已有关联。
+    """
+    assignments: list[SalesAssignmentItem]
+    mode: str = "patch"  # "full" | "patch"
+    scope_customer_codes: list[str] = []
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip().lower()
+            if v not in ("full", "patch"):
+                raise ValueError("mode must be 'full' or 'patch'")
+        return v
+
+
+class SalesSyncUnmatched(BaseModel):
+    customer_code: str
+    supplier_name: str
+    provider: str
+    external_project_id: str
+    reason: str
+
+
+class SalesSyncResult(BaseModel):
+    inserted: int
+    deleted: int
+    unchanged: int
+    unmatched: list[SalesSyncUnmatched]
 
 
 class CostByService(BaseModel):
@@ -171,11 +224,95 @@ class CostSummary(BaseModel):
 
 # ─── Helpers ───────────────────────────────────────────────────
 
-def _log(db, project, action: str, from_status: str, to_status: str, notes: str | None = None):
+def _log(
+    db,
+    project,
+    action: str,
+    from_status: str,
+    to_status: str,
+    notes: str | None = None,
+    customer_code: str | None = None,
+    operator: str | None = None,
+):
     db.add(ProjectAssignmentLog(
         project_id=project.id, action=action,
-        from_status=from_status, to_status=to_status, notes=notes,
+        from_status=from_status, to_status=to_status,
+        customer_code=customer_code, operator=operator, notes=notes,
     ))
+
+
+def _normalize_code(code: str) -> str:
+    """上游客户编号统一大写 + 去空白。"""
+    return (code or "").strip().upper()
+
+
+async def _codes_for_project(db: AsyncSession, project_id: int) -> list[str]:
+    rows = (
+        await db.execute(
+            select(ProjectCustomerAssignment.customer_code)
+            .where(ProjectCustomerAssignment.project_id == project_id)
+            .order_by(ProjectCustomerAssignment.customer_code)
+        )
+    ).all()
+    return [r[0] for r in rows]
+
+
+async def _codes_by_project_ids(
+    db: AsyncSession, project_ids: list[int]
+) -> dict[int, list[str]]:
+    if not project_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                ProjectCustomerAssignment.project_id,
+                ProjectCustomerAssignment.customer_code,
+            )
+            .where(ProjectCustomerAssignment.project_id.in_(project_ids))
+            .order_by(
+                ProjectCustomerAssignment.project_id,
+                ProjectCustomerAssignment.customer_code,
+            )
+        )
+    ).all()
+    out: dict[int, list[str]] = {pid: [] for pid in project_ids}
+    for pid, code in rows:
+        out.setdefault(pid, []).append(code)
+    return out
+
+
+async def _recompute_status(db: AsyncSession, project: Project) -> tuple[str, str]:
+    """Status 规则派生：inactive 不动；有绑定 → active；无绑定 → standby。
+    返回 (old, new)；若没变则 old==new。调用方负责写 _log。
+    """
+    old = project.status
+    if old == "inactive":
+        return old, old
+    count = (
+        await db.execute(
+            select(func.count())
+            .select_from(ProjectCustomerAssignment)
+            .where(ProjectCustomerAssignment.project_id == project.id)
+        )
+    ).scalar() or 0
+    new = "active" if count > 0 else "standby"
+    if new != old:
+        project.status = new
+    return old, new
+
+
+def _principal_operator(request) -> str | None:
+    """尽量从 request.state.principal 取一个人类可读的 operator 名。"""
+    try:
+        principal = getattr(request.state, "principal", None)
+        if not principal:
+            return None
+        u = getattr(principal, "user", None)
+        if u and getattr(u, "username", None):
+            return u.username
+        return getattr(principal, "auth_method", None) or None
+    except Exception:
+        return None
 
 
 # ─── Endpoints ─────────────────────────────────────────────────
@@ -184,6 +321,7 @@ def _log(db, project, action: str, from_status: str, to_status: str, notes: str 
 async def list_accounts(
     provider: str | None = None,
     status: str | None = None,
+    customer_code: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -208,8 +346,16 @@ async def list_accounts(
         stmt = stmt.where(SupplySource.provider == provider)
     if status:
         stmt = stmt.where(Project.status == status)
+    if customer_code:
+        code = _normalize_code(customer_code)
+        stmt = stmt.join(
+            ProjectCustomerAssignment,
+            ProjectCustomerAssignment.project_id == Project.id,
+        ).where(ProjectCustomerAssignment.customer_code == code)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).all()
+
+    codes_map = await _codes_by_project_ids(db, [r.id for r in rows])
     return [
         ServiceAccountListItem(
             id=r.id,
@@ -220,13 +366,19 @@ async def list_accounts(
             external_project_id=r.external_project_id,
             status=r.status,
             order_method=r.order_method,
+            customer_codes=codes_map.get(r.id, []),
             created_at=r.created_at,
         )
         for r in rows
     ]
 
 
-@router.post("/", response_model=ServiceAccountListItem, status_code=201)
+@router.post(
+    "/",
+    response_model=ServiceAccountListItem,
+    status_code=201,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def create_account(body: ServiceAccountCreate, db: AsyncSession = Depends(get_db)):
     ss = await db.get(SupplySource, body.supply_source_id)
     if not ss:
@@ -271,6 +423,7 @@ async def create_account(body: ServiceAccountCreate, db: AsyncSession = Depends(
         external_project_id=project.external_project_id,
         status=project.status,
         order_method=project.order_method,
+        customer_codes=[],
         created_at=project.created_at,
     )
 
@@ -323,7 +476,11 @@ async def _hard_delete(account_id: int, db: AsyncSession):
     await db.commit()
 
 
-@router.delete("/hard/{account_id}", status_code=204)
+@router.delete(
+    "/hard/{account_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def hard_delete_account(account_id: int, db: AsyncSession = Depends(get_db)):
     await _hard_delete(account_id, db)
 
@@ -446,8 +603,11 @@ async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
     history = [HistoryItem(
         id=lg.id, action=lg.action,
         from_status=lg.from_status, to_status=lg.to_status,
-        operator=lg.operator, notes=lg.notes, created_at=lg.created_at,
+        operator=lg.operator, customer_code=lg.customer_code,
+        notes=lg.notes, created_at=lg.created_at,
     ) for lg in logs]
+
+    customer_codes = await _codes_for_project(db, project.id)
 
     return ServiceAccountDetail(
         id=project.id,
@@ -460,14 +620,24 @@ async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
         status=project.status,
         notes=project.notes,
         order_method=project.order_method,
+        customer_codes=customer_codes,
         secret_fields=secret_fields,
         created_at=project.created_at,
         history=history,
     )
 
 
-@router.put("/{account_id}", response_model=ServiceAccountDetail)
-async def update_account(account_id: int, body: ServiceAccountUpdate, db: AsyncSession = Depends(get_db)):
+@router.put(
+    "/{account_id}",
+    response_model=ServiceAccountDetail,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def update_account(
+    account_id: int,
+    body: ServiceAccountUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     project = await db.get(Project, account_id)
     if not project:
         raise HTTPException(404, "Service account not found")
@@ -475,6 +645,7 @@ async def update_account(account_id: int, body: ServiceAccountUpdate, db: AsyncS
     data = body.model_dump(exclude_unset=True)
     secret_data = data.pop("secret_data", None)
     new_supply_source_id = data.pop("supply_source_id", None)
+    customer_codes_payload = data.pop("customer_codes", None)
 
     for k, v in data.items():
         if hasattr(project, k):
@@ -533,12 +704,53 @@ async def update_account(account_id: int, body: ServiceAccountUpdate, db: AsyncS
                 ca.secret_data = encrypt_dict(secret_data)
                 await db.flush()
 
+    # Customer-codes diff + status recompute (full replace semantics).
+    if customer_codes_payload is not None:
+        new_codes: set[str] = set()
+        for c in customer_codes_payload:
+            c = _normalize_code(c)
+            if c:
+                new_codes.add(c)
+        existing = set(await _codes_for_project(db, project.id))
+        to_add = new_codes - existing
+        to_remove = existing - new_codes
+        if to_add or to_remove:
+            operator = _principal_operator(request)
+            old_status = project.status
+            for code in sorted(to_remove):
+                await db.execute(
+                    ProjectCustomerAssignment.__table__.delete().where(
+                        (ProjectCustomerAssignment.project_id == project.id)
+                        & (ProjectCustomerAssignment.customer_code == code)
+                    )
+                )
+                _log(
+                    db, project, "customer_unbound",
+                    from_status=old_status, to_status=old_status,
+                    customer_code=code, operator=operator,
+                )
+            for code in sorted(to_add):
+                db.add(ProjectCustomerAssignment(
+                    project_id=project.id, customer_code=code, assigned_by=operator,
+                ))
+                _log(
+                    db, project, "customer_bound",
+                    from_status=old_status, to_status=old_status,
+                    customer_code=code, operator=operator,
+                )
+            await db.flush()
+            await _recompute_status(db, project)
+
     await db.commit()
     return await get_account(account_id, db)
 
 
-@router.post("/{account_id}/suspend", response_model=ServiceAccountDetail)
-async def suspend_account(account_id: int, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "/{account_id}/suspend",
+    response_model=ServiceAccountDetail,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def suspend_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, account_id)
     if not project:
         raise HTTPException(404, "Service account not found")
@@ -548,13 +760,22 @@ async def suspend_account(account_id: int, db: AsyncSession = Depends(get_db)):
     old_status = project.status
     project.status = "inactive"
 
-    _log(db, project, "suspended", from_status=old_status, to_status="inactive")
+    _log(
+        db, project, "suspended",
+        from_status=old_status, to_status="inactive",
+        operator=_principal_operator(request),
+    )
     await db.commit()
     return await get_account(account_id, db)
 
 
-@router.post("/{account_id}/activate", response_model=ServiceAccountDetail)
-async def activate_account(account_id: int, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "/{account_id}/activate",
+    response_model=ServiceAccountDetail,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def activate_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """恢复启用。恢复后由规则派生最终 status：有客户绑定→active；否则→standby。"""
     project = await db.get(Project, account_id)
     if not project:
         raise HTTPException(404, "Service account not found")
@@ -562,13 +783,190 @@ async def activate_account(account_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(400, f"Cannot activate in '{project.status}' state")
 
     old_status = project.status
-    project.status = "active"
-    _log(db, project, "activated", from_status=old_status, to_status="active")
+    # Leave 'inactive' → recompute will set active or standby based on bindings.
+    if old_status == "inactive":
+        project.status = "standby"
+        await db.flush()
+    old, new = await _recompute_status(db, project)
+    _log(
+        db, project, "activated",
+        from_status=old_status, to_status=project.status,
+        operator=_principal_operator(request),
+    )
     await db.commit()
     return await get_account(account_id, db)
 
 
-@router.delete("/{account_id}", status_code=204)
+# ─── Sales-system batch sync ──────────────────────────────────
+
+@router.post(
+    "/customer-assignments/sync",
+    response_model=SalesSyncResult,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def sync_customer_assignments(
+    body: SalesSyncBody,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """销售系统调用：批量下发 (customer_code, supplier, provider, external_project_id) 关联。
+
+    定位键：(supplier_name, provider, external_project_id)。找不到则写入 unmatched 返回，
+    不阻断整批。
+
+    - mode=full: 只对 body.scope_customer_codes 这批客户编号做差分（多删少插）。
+      若未传 scope_customer_codes，则按入参 assignments 中出现的 customer_codes 作为 scope。
+    - mode=patch: 仅 upsert，不删除。
+    """
+    operator = _principal_operator(request) or "sales-sync"
+
+    # 归一化入参
+    items: list[tuple[str, str, str, str]] = []  # (code, supplier, provider, ext)
+    for a in body.assignments:
+        code = _normalize_code(a.customer_code)
+        supplier = (a.supplier_name or "").strip()
+        provider = (a.provider or "").strip().lower()
+        ext = (a.external_project_id or "").strip()
+        if not (code and supplier and provider and ext):
+            continue
+        items.append((code, supplier, provider, ext))
+
+    scope_codes: set[str] = {
+        _normalize_code(c) for c in (body.scope_customer_codes or []) if c
+    }
+    if body.mode == "full" and not scope_codes:
+        scope_codes = {i[0] for i in items}
+
+    # 批量定位 project：一次查出用到的 (supplier_name, provider, external_project_id) → project
+    unique_keys = {(s, p, e) for _, s, p, e in items}
+    project_map: dict[tuple[str, str, str], Project] = {}
+    if unique_keys:
+        suppliers = {s for s, _, _ in unique_keys}
+        providers = {p for _, p, _ in unique_keys}
+        exts = {e for _, _, e in unique_keys}
+        rows = (
+            await db.execute(
+                select(Project, SupplySource, Supplier)
+                .join(SupplySource, Project.supply_source_id == SupplySource.id)
+                .join(Supplier, SupplySource.supplier_id == Supplier.id)
+                .where(
+                    Supplier.name.in_(suppliers),
+                    SupplySource.provider.in_(providers),
+                    Project.external_project_id.in_(exts),
+                )
+            )
+        ).all()
+        for p, ss, su in rows:
+            project_map[(su.name, ss.provider, p.external_project_id)] = p
+
+    unmatched: list[SalesSyncUnmatched] = []
+    desired: dict[int, set[str]] = {}  # project_id -> customer_codes (new desired set, partial)
+    touched_projects: dict[int, Project] = {}
+    for code, supplier, provider, ext in items:
+        proj = project_map.get((supplier, provider, ext))
+        if not proj:
+            unmatched.append(SalesSyncUnmatched(
+                customer_code=code, supplier_name=supplier, provider=provider,
+                external_project_id=ext,
+                reason="service account not found",
+            ))
+            continue
+        desired.setdefault(proj.id, set()).add(code)
+        touched_projects[proj.id] = proj
+
+    # Fetch current state for every project we will write to. In full mode, we
+    # also need projects that currently hold any scope_codes even if they don't
+    # appear in assignments (so we can delete them).
+    candidate_project_ids: set[int] = set(desired.keys())
+    if body.mode == "full" and scope_codes:
+        rows = (
+            await db.execute(
+                select(ProjectCustomerAssignment.project_id)
+                .where(ProjectCustomerAssignment.customer_code.in_(list(scope_codes)))
+                .distinct()
+            )
+        ).all()
+        for (pid,) in rows:
+            candidate_project_ids.add(pid)
+
+    if not candidate_project_ids:
+        await db.commit()
+        return SalesSyncResult(inserted=0, deleted=0, unchanged=0, unmatched=unmatched)
+
+    # Load missing Project rows we don't have cached yet
+    missing_ids = [pid for pid in candidate_project_ids if pid not in touched_projects]
+    if missing_ids:
+        prows = (
+            await db.execute(select(Project).where(Project.id.in_(missing_ids)))
+        ).scalars().all()
+        for p in prows:
+            touched_projects[p.id] = p
+
+    current_map = await _codes_by_project_ids(db, list(candidate_project_ids))
+
+    inserted = deleted = unchanged = 0
+    for pid in candidate_project_ids:
+        proj = touched_projects.get(pid)
+        if not proj:
+            continue
+        current = set(current_map.get(pid, []))
+        want = desired.get(pid, set())
+
+        if body.mode == "full":
+            # Only compare within scope_codes. Codes outside scope stay untouched.
+            current_in_scope = current & scope_codes
+            want_in_scope = want & scope_codes
+            to_add = want_in_scope - current_in_scope
+            to_remove = current_in_scope - want_in_scope
+            unchanged += len(current_in_scope & want_in_scope)
+        else:
+            # patch: upsert only, never delete
+            to_add = want - current
+            to_remove = set()
+            unchanged += len(current & want)
+
+        for code in sorted(to_remove):
+            await db.execute(
+                ProjectCustomerAssignment.__table__.delete().where(
+                    (ProjectCustomerAssignment.project_id == proj.id)
+                    & (ProjectCustomerAssignment.customer_code == code)
+                )
+            )
+            deleted += 1
+            _log(
+                db, proj, "customer_unbound",
+                from_status=proj.status, to_status=proj.status,
+                customer_code=code, operator=operator,
+                notes="sales batch sync",
+            )
+
+        for code in sorted(to_add):
+            db.add(ProjectCustomerAssignment(
+                project_id=proj.id, customer_code=code, assigned_by=operator,
+                notes="sales sync",
+            ))
+            inserted += 1
+            _log(
+                db, proj, "customer_bound",
+                from_status=proj.status, to_status=proj.status,
+                customer_code=code, operator=operator,
+                notes="sales batch sync",
+            )
+
+        await db.flush()
+        await _recompute_status(db, proj)
+
+    await db.commit()
+    return SalesSyncResult(
+        inserted=inserted, deleted=deleted, unchanged=unchanged, unmatched=unmatched,
+    )
+
+
+@router.delete(
+    "/{account_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def delete_account(account_id: int, db: AsyncSession = Depends(get_db)):
     await _hard_delete(account_id, db)
 
@@ -649,7 +1047,10 @@ async def get_costs(
     )
 
 
-@router.get("/{account_id}/credentials")
+@router.get(
+    "/{account_id}/credentials",
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def get_credentials(account_id: int, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, account_id)
     if not project:
@@ -838,7 +1239,10 @@ def _build_excel(
     )
 
 
-@router.post("/discover-gcp-projects")
+@router.post(
+    "/discover-gcp-projects",
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def discover_gcp_projects(db: AsyncSession = Depends(get_db)):
     """为账单中存在但未建档的 GCP project 创建 Project，挂在系统供应商「未分配资源组」的 GCP 货源下。"""
     billing_res = await db.execute(

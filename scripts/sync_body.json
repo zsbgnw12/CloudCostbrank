@@ -1,0 +1,1 @@
+{"mode":"patch","assignments":[{"customer_code":"SYNC_C1","supplier_name":"神州泰岳","provider":"aws","external_project_id":"675139393309"},{"customer_code":"SYNC_C2","supplier_name":"bogus","provider":"azure","external_project_id":"does-not-exist"}]}

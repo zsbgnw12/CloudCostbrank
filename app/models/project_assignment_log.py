@@ -13,10 +13,13 @@ class ProjectAssignmentLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(30), nullable=False)
-    # created / activated / suspended
+    # created / activated / suspended / standby /
+    # customer_bound / customer_unbound / customer_batch_synced
     from_status: Mapped[str | None] = mapped_column(String(15))
     to_status: Mapped[str | None] = mapped_column(String(15))
     operator: Mapped[str | None] = mapped_column(String(50))
+    # For customer_bound / customer_unbound this holds the affected code.
+    customer_code: Mapped[str | None] = mapped_column(String(64))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

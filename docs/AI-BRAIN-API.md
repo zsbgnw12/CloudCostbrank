@@ -457,9 +457,9 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ### 5.2 `GET /api/service-accounts/`
 
-**模块：`service_accounts`，角色：`cloud_admin`**。路径需带尾部斜杠。
+**模块：`service_accounts`，角色：任意登录**（列表查看所有角色可用）。路径需带尾部斜杠。
 
-**入参（Query）**：`provider`、`status`、`page`、`page_size`。
+**入参（Query）**：`provider`、`status`、`customer_code`（按客户编号反查）、`page`、`page_size`。
 
 **出参**：
 
@@ -473,10 +473,20 @@ curl -s -H "Authorization: Bearer $TOKEN" \
     "provider": "aws",
     "external_project_id": "string",
     "status": "active",
+    "order_method": null,
+    "customer_codes": ["C001", "C002"],
     "created_at": "2026-04-01T00:00:00"
   }
 ]
 ```
+
+**`status` 派生规则**（后端 `_recompute_status`）：
+
+- `inactive`（人工停用）→ 不动，最高优先级
+- 否则：`customer_codes` 非空 → `active`；为空 → `standby`
+- 触发时机：`PUT /{id}` 带 `customer_codes`、`POST /{id}/activate`、`POST /customer-assignments/sync` 后
+
+`customer_codes`：由销售系统下发的外部客户编号数组，N:M 语义（一个客户可关联多个服务账号，一个服务账号可关联多个客户）。全部自动归一化为大写。
 
 ---
 
@@ -495,6 +505,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   "external_project_id": "string",
   "status": "active",
   "notes": null,
+  "order_method": null,
+  "customer_codes": ["C001", "C002"],
   "secret_fields": ["client_id"],
   "created_at": "2026-04-01T00:00:00",
   "history": [
@@ -504,12 +516,15 @@ curl -s -H "Authorization: Bearer $TOKEN" \
       "from_status": null,
       "to_status": "active",
       "operator": null,
+      "customer_code": null,
       "notes": null,
       "created_at": "2026-04-01T00:00:00"
     }
   ]
 }
 ```
+
+`history[].action` 枚举：`created` / `suspended` / `activated` / `customer_bound` / `customer_unbound` / `customer_batch_synced`。当 action 为 `customer_*` 时，`customer_code` 字段非空。
 
 ---
 
@@ -539,6 +554,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ### 5.5 `GET /api/service-accounts/daily-report`
 
+**角色：任意登录**（前端『统计』页调用，viewer/ops/finance 都可访问）。
+
 **入参（Query）**：`start_date`、`end_date`（必填），`provider`（可选）。
 
 **出参**：
@@ -556,6 +573,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   }
 ]
 ```
+
+> 注：此接口的"每条记录按 (账号, 日期, 产品) 聚合"；业务含义是前端『统计』页。物理挂在 `service_accounts` 路由下，但已做端点级权限区分——只读端点（列表 / 详情 / costs / daily-report）任意登录可用，敏感端点（创建/删除/暂停/恢复/凭据/批量同步）需 `cloud_admin`。
 
 ---
 
@@ -700,6 +719,74 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ---
 
+## 6.5 销售系统专用接口（客户编号下发）
+
+> 面向"销售系统对接"，**AI 大脑不调用**。模块：`service_accounts`；**这两条是写操作，需 `cloud_admin`**（`service_accounts` 只读端点已放宽到任意登录，但写仍然 admin-only）。建议通过 Casdoor `client_credentials` 拿 token。
+
+### 6.5.1 `POST /api/service-accounts/customer-assignments/sync`
+
+**用途**：销售系统把"客户编号 ↔ 服务账号"关联批量下发。幂等。
+
+定位键：`(supplier_name, provider, external_project_id)`。匹配不到的记录进 `unmatched` 返回，不阻断整批。
+
+**入参（Body）**：
+
+```json
+{
+  "mode": "patch",
+  "scope_customer_codes": ["C001", "C002"],
+  "assignments": [
+    {
+      "customer_code": "C001",
+      "supplier_name": "xxx 供应商",
+      "provider": "azure",
+      "external_project_id": "5550d5e0-56d3-46b2-8c08-bb9834d8b349"
+    }
+  ]
+}
+```
+
+- `mode=patch`：只做 upsert，从不删除。推荐作为默认模式。
+- `mode=full`：对 `scope_customer_codes` 这批做差分（多删少插）。若该字段留空，后端回退为"按 `assignments` 里出现的客户编号作为 scope"——这种隐式行为建议明确传一份。
+- `customer_code` 自动 `upper().strip()` 归一化。
+
+**出参**：
+
+```json
+{
+  "inserted": 1,
+  "deleted": 0,
+  "unchanged": 0,
+  "unmatched": [
+    {
+      "customer_code": "C002",
+      "supplier_name": "bogus",
+      "provider": "azure",
+      "external_project_id": "does-not-exist",
+      "reason": "service account not found"
+    }
+  ]
+}
+```
+
+### 6.5.2 `PUT /api/service-accounts/{account_id}`（仅 `customer_codes` 字段）
+
+**用途**：单个服务账号的客户编号**全量覆盖**（和 `secret_data` 同语义：`undefined` 不动；`[]` 清空；`[...]` 替换）。
+
+**入参（Body）**：
+
+```json
+{ "customer_codes": ["C001"] }
+```
+
+**出参**：整个 `ServiceAccountDetail`（见 §5.3）。
+
+副作用：
+- 新增/删除会写 `project_assignment_logs`，action=`customer_bound` / `customer_unbound`，带 operator。
+- 清空或首次绑定都会触发 `_recompute_status`，自动把 status 从 `active` → `standby` 或反向切换。
+
+---
+
 ## 7. 禁止对 AI 开放的接口
 
 以下接口 **不应** 加入 AI 可调工具列表：
@@ -708,6 +795,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 |---|---|---|
 | 凭据明文 | `GET /api/service-accounts/{id}/credentials` | 会解密云账号凭据 |
 | 写操作 | 所有 `POST` / `PUT` / `PATCH` / `DELETE` | 含同步触发、账单调整、告警规则变更、服务账号变更等 |
+| 客户编号分配（销售专用） | `POST /api/service-accounts/customer-assignments/sync`、`PUT /api/service-accounts/{id}` 带 `customer_codes` | 仅销售系统走 Casdoor client_credentials 下发；AI 不应写 |
 | 同步触发 | `/api/sync/*`（除 `GET /last`） | 需 `cloud_ops`，触发后台任务 |
 | Azure 部署 | `/api/azure-deploy/*` | 需 `cloud_admin`，涉及 ARM Token 与资源创建 |
 | 跨租户授权 | `/api/azure-consent/*` | 需 `cloud_admin`，改订阅授权态 |
@@ -746,7 +834,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 | `suppliers` | `/api/suppliers/*` | 任意登录 | 无 |
 | `exchange_rates` | `/api/exchange-rates/*` | 任意登录 | 无 |
 | `data_sources` | `/api/data-sources/*` | 任意登录 | 无 |
-| `service_accounts` | `/api/service-accounts/*` | `cloud_admin` | 无 |
+| `service_accounts` | `/api/service-accounts/*` | **读=任意登录；写=`cloud_admin`** | 无 |
 | `azure_deploy` | `/api/azure-deploy/*` | `cloud_admin` | 无 |
 | `azure_consent` | `/api/azure-consent/*` | `cloud_admin` | 无 |
 

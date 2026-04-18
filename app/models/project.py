@@ -32,3 +32,9 @@ class Project(Base):
     data_source = relationship("DataSource", back_populates="projects")
     category = relationship("Category", back_populates="projects")
     assignment_logs = relationship("ProjectAssignmentLog", back_populates="project", order_by="ProjectAssignmentLog.created_at")
+    customer_assignments = relationship(
+        "ProjectCustomerAssignment",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="ProjectCustomerAssignment.assigned_at",
+    )

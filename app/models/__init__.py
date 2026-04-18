@@ -11,6 +11,7 @@ from app.models.monthly_bill import MonthlyBill
 from app.models.exchange_rate import ExchangeRate
 from app.models.operation_log import OperationLog
 from app.models.project_assignment_log import ProjectAssignmentLog
+from app.models.project_customer_assignment import ProjectCustomerAssignment
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.models.token_usage import TokenUsage
@@ -36,6 +37,7 @@ __all__ = [
     "ExchangeRate",
     "OperationLog",
     "ProjectAssignmentLog",
+    "ProjectCustomerAssignment",
     "Supplier",
     "SupplySource",
     "TokenUsage",

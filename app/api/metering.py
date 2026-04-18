@@ -42,6 +42,11 @@ _ACCOUNT_ID_QUERY = Query(
     description="按服务账号过滤：projects 表主键 id（服务账号列表中的 id），非云厂商订阅/账号字符串",
 )
 
+_ACCOUNT_IDS_QUERY = Query(
+    None,
+    description="按服务账号批量过滤：projects 表主键 id 列表；与 account_id 二选一，传入时优先生效",
+)
+
 
 def _parse_date(value: str | None) -> dt.date | None:
     if not value:
@@ -70,14 +75,30 @@ def _metering_scope(
     stmt,
     *,
     account_id: int | None = None,
+    account_ids: list[int] | None = None,
     supply_source_id: int | None = None,
     supplier_name: str | None = None,
     data_source_id: int | None = None,
 ):
-    """可选筛选：货源 supply_source_id、供应商名 supplier_name、data_source_id、account_id（projects.id）。"""
+    """可选筛选：货源 supply_source_id、供应商名 supplier_name、data_source_id、account_id / account_ids（projects.id）。
+
+    account_ids 非空时优先生效；否则 account_id 生效；两者都没有再落到 supply_source_id / supplier_name。
+    """
     if data_source_id is not None:
         stmt = stmt.where(BillingData.data_source_id == data_source_id)
-    if account_id is not None:
+    if account_ids:
+        stmt = (
+            stmt.join(
+                Project,
+                BillingData.project_id == func.trim(Project.external_project_id),
+            )
+            .join(SupplySource, Project.supply_source_id == SupplySource.id)
+            .where(
+                BillingData.provider == SupplySource.provider,
+                Project.id.in_(account_ids),
+            )
+        )
+    elif account_id is not None:
         stmt = (
             stmt.join(
                 Project,
@@ -125,6 +146,7 @@ async def metering_summary(
     provider: str | None = None,
     product: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -143,6 +165,7 @@ async def metering_summary(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,
@@ -164,6 +187,7 @@ async def metering_daily(
     provider: str | None = None,
     product: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -183,6 +207,7 @@ async def metering_daily(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,
@@ -207,6 +232,7 @@ async def metering_by_service(
     date_end: str | None = None,
     provider: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -227,6 +253,7 @@ async def metering_by_service(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,
@@ -250,6 +277,7 @@ async def metering_by_service(
 async def metering_product_list(
     provider: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -267,6 +295,7 @@ async def metering_product_list(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,
@@ -283,6 +312,7 @@ async def metering_detail(
     provider: str | None = None,
     product: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -311,6 +341,7 @@ async def metering_detail(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,
@@ -332,6 +363,7 @@ async def metering_detail_count(
     provider: str | None = None,
     product: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -345,6 +377,7 @@ async def metering_detail_count(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,
@@ -412,6 +445,7 @@ async def metering_export(
     provider: str | None = None,
     product: str | None = None,
     account_id: int | None = _ACCOUNT_ID_QUERY,
+    account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
     supplier_name: str | None = Query(None),
     data_source_id: int | None = Query(None),
@@ -437,6 +471,7 @@ async def metering_export(
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
+        account_ids=account_ids,
         supply_source_id=supply_source_id,
         supplier_name=supplier_name,
         data_source_id=data_source_id,

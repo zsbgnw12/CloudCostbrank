@@ -139,8 +139,10 @@ app.include_router(alerts.router,           prefix="/api/alerts",           tags
 app.include_router(bills.router,            prefix="/api/bills",            tags=["Monthly Bills"],     dependencies=_m("bills"))
 app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags=["Exchange Rates"],    dependencies=_m("exchange_rates"))
 app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_m("suppliers"))
-# Highly sensitive routers additionally require cloud_admin:
-app.include_router(service_accounts.router, prefix="/api/service-accounts", tags=["Service Accounts"],  dependencies=_m("service_accounts") + [Depends(require_roles("cloud_admin"))])
+# service_accounts: 路由级只留模块开关；敏感端点在 service_accounts.py 里逐条加 cloud_admin。
+app.include_router(service_accounts.router, prefix="/api/service-accounts", tags=["Service Accounts"],  dependencies=_m("service_accounts"))
+# 其它敏感路由仍整体要 cloud_admin：
+
 app.include_router(azure_deploy.router,     prefix="/api/azure-deploy",     tags=["Azure Deploy"],      dependencies=_m("azure_deploy") + [Depends(require_roles("cloud_admin"))])
 app.include_router(azure_consent.router,    prefix="/api/azure-consent",    tags=["Azure Consent"],     dependencies=_m("azure_consent") + [Depends(require_roles("cloud_admin"))])
 # Consent callback — public (no auth), customer browser lands here after Microsoft redirect
