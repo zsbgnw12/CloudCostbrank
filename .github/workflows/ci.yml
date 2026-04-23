@@ -90,6 +90,7 @@ jobs:
           cat > alembic.ci.ini <<'EOF'
           [alembic]
           script_location = alembic
+          prepend_sys_path = .
           sqlalchemy.url = postgresql+psycopg2://postgres:postgres@localhost:5432/cloudcost
 
           [loggers]
