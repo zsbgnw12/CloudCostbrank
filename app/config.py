@@ -21,14 +21,19 @@ class Settings(BaseSettings):
     # AES encryption key (Fernet key, base64-encoded 32 bytes)
     AES_SECRET_KEY: str = ""
 
-    # SMTP for alert emails (Gmail: use smtp.gmail.com:587, SMTP_USER=full address,
-    # SMTP_PASSWORD=Google「应用专用密码」not login password; SMTP_FROM 通常与 SMTP_USER 相同)
+    # SMTP for alert emails.
+    # 两种典型配置：
+    #   • Gmail / Outlook：SMTP_PORT=587, SMTP_USE_TLS=true, SMTP_USE_SSL=false  (STARTTLS)
+    #   • 189.cn / QQ / 网易：SMTP_PORT=465, SMTP_USE_SSL=true, SMTP_USE_TLS=false (隐式 SSL)
+    # Gmail 的 SMTP_PASSWORD 是「应用专用密码」，不是登录密码。
+    # SMTP_FROM 通常与 SMTP_USER 相同。
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "cloudcost@example.com"
-    SMTP_USE_TLS: bool = True
+    SMTP_USE_TLS: bool = True   # STARTTLS（587）
+    SMTP_USE_SSL: bool = False  # 隐式 SSL（465）；两者任选其一，SSL 优先于 TLS
 
     # Azure AD (for AI model batch deployment — SPA public client, no secret needed)
     AZURE_AD_CLIENT_ID: str = ""
@@ -62,6 +67,10 @@ class Settings(BaseSettings):
     CASDOOR_APP_NAME: str = "cloudcost"
     CASDOOR_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback"
     CASDOOR_FRONTEND_HOME: str = "http://localhost:3000/"
+    # Casdoor token payload 里"角色列表"的 claim 名。
+    # 默认 "roles"；Keycloak / 自定义映射场景可改成 "role" / "user_roles" / "realm_roles" 等。
+    # 兼容：即便设置为其他值，代码仍会 fallback 读 "roles" 和 "role"。
+    CASDOOR_ROLES_CLAIM: str = "roles"
 
     # ===== 云管自己的 JWT (HS256) =====
     CC_JWT_SECRET: str = "change-me-to-a-long-random-string"

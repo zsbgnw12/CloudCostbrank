@@ -229,7 +229,16 @@ def _send_email(to_addrs: str, subject: str, body: str):
     msg.attach(MIMEText(body, "plain"))
     msg.attach(MIMEText(html, "html"))
 
-    if settings.SMTP_USE_TLS:
+    # 三种连接方式，按优先级：
+    #   1. SMTP_USE_SSL=True → 隐式 SSL（常用端口 465，国内 189/QQ/网易）
+    #   2. SMTP_USE_TLS=True → STARTTLS（常用端口 587，Gmail/Outlook）
+    #   3. 都关 → 明文（仅限内网调试）
+    if settings.SMTP_USE_SSL:
+        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            if settings.SMTP_USER:
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM, recipients, msg.as_string())
+    elif settings.SMTP_USE_TLS:
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             server.starttls()
             if settings.SMTP_USER:

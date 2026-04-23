@@ -141,10 +141,11 @@ app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags
 app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_m("suppliers"))
 # service_accounts: 路由级只留模块开关；敏感端点在 service_accounts.py 里逐条加 cloud_admin。
 app.include_router(service_accounts.router, prefix="/api/service-accounts", tags=["Service Accounts"],  dependencies=_m("service_accounts"))
-# 其它敏感路由仍整体要 cloud_admin：
+# Azure 相关路由开放给 cloud_admin + cloud_ops（两个 router 内部均无 DELETE 端点；
+# execute/plan 等会产生云资源的操作属于"创建/编辑"，按 ops 规则放开，误操作风险由审计兜底）：
 
-app.include_router(azure_deploy.router,     prefix="/api/azure-deploy",     tags=["Azure Deploy"],      dependencies=_m("azure_deploy") + [Depends(require_roles("cloud_admin"))])
-app.include_router(azure_consent.router,    prefix="/api/azure-consent",    tags=["Azure Consent"],     dependencies=_m("azure_consent") + [Depends(require_roles("cloud_admin"))])
+app.include_router(azure_deploy.router,     prefix="/api/azure-deploy",     tags=["Azure Deploy"],      dependencies=_m("azure_deploy") + [Depends(require_roles("cloud_admin", "cloud_ops"))])
+app.include_router(azure_consent.router,    prefix="/api/azure-consent",    tags=["Azure Consent"],     dependencies=_m("azure_consent") + [Depends(require_roles("cloud_admin", "cloud_ops"))])
 # Consent callback — public (no auth), customer browser lands here after Microsoft redirect
 app.include_router(azure_consent.callback_router, prefix="/api/azure-consent", tags=["Azure Consent Callback"])
 app.include_router(metering.router,         prefix="/api/metering",         tags=["Metering"],          dependencies=_m("metering"))

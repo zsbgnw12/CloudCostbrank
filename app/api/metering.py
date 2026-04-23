@@ -11,10 +11,12 @@ from sqlalchemy import select, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal
-from app.auth.principal import Principal
+from app.auth.principal import AuthMethod, Principal
 from app.auth.scope import visible_data_source_ids
 from app.database import get_db
 from app.models.billing import BillingData
+from app.models.cloud_account import CloudAccount
+from app.models.data_source import DataSource
 from app.models.project import Project
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
@@ -23,6 +25,10 @@ from app.schemas.metering import (
     DailyUsageStats,
     ServiceUsageStats,
     UsageDetailRead,
+)
+from app.schemas.taiji import (
+    TaijiIngestRequest,
+    TaijiIngestResponse,
 )
 
 router = APIRouter()
@@ -47,6 +53,11 @@ _ACCOUNT_IDS_QUERY = Query(
     description="按服务账号批量过滤：projects 表主键 id 列表；与 account_id 二选一，传入时优先生效",
 )
 
+_PRODUCTS_QUERY = Query(
+    None,
+    description="按服务名批量过滤：billing_data.product 列；与 product 二选一，传入时优先生效",
+)
+
 
 def _parse_date(value: str | None) -> dt.date | None:
     if not value:
@@ -57,7 +68,7 @@ def _parse_date(value: str | None) -> dt.date | None:
         raise HTTPException(status_code=422, detail=f"无效日期格式: {value}，请使用 YYYY-MM-DD")
 
 
-def _apply_filters(stmt, date_start, date_end, provider, product):
+def _apply_filters(stmt, date_start, date_end, provider, product, products=None):
     d_start = _parse_date(date_start)
     d_end = _parse_date(date_end)
     if d_start:
@@ -66,7 +77,10 @@ def _apply_filters(stmt, date_start, date_end, provider, product):
         stmt = stmt.where(BillingData.date <= d_end)
     if provider:
         stmt = stmt.where(BillingData.provider == provider)
-    if product:
+    # products 非空时优先（多选）；否则回退到单值 product
+    if products:
+        stmt = stmt.where(BillingData.product.in_(products))
+    elif product:
         stmt = stmt.where(BillingData.product == product)
     return stmt
 
@@ -145,6 +159,7 @@ async def metering_summary(
     date_end: str | None = None,
     provider: str | None = None,
     product: str | None = None,
+    products: list[str] | None = _PRODUCTS_QUERY,
     account_id: int | None = _ACCOUNT_ID_QUERY,
     account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
@@ -160,7 +175,7 @@ async def metering_summary(
             func.count().label("record_count"),
             func.count(func.distinct(BillingData.product)).label("service_count"),
         ).select_from(BillingData),
-        date_start, date_end, provider, product,
+        date_start, date_end, provider, product, products=products,
     )
     stmt = _metering_scope(
         stmt,
@@ -186,6 +201,7 @@ async def metering_daily(
     date_end: str | None = None,
     provider: str | None = None,
     product: str | None = None,
+    products: list[str] | None = _PRODUCTS_QUERY,
     account_id: int | None = _ACCOUNT_ID_QUERY,
     account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
@@ -203,7 +219,7 @@ async def metering_daily(
         )
         .select_from(BillingData)
     )
-    stmt = _apply_filters(base, date_start, date_end, provider, product)
+    stmt = _apply_filters(base, date_start, date_end, provider, product, products=products)
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
@@ -231,6 +247,7 @@ async def metering_by_service(
     date_start: str | None = None,
     date_end: str | None = None,
     provider: str | None = None,
+    products: list[str] | None = _PRODUCTS_QUERY,
     account_id: int | None = _ACCOUNT_ID_QUERY,
     account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
@@ -249,7 +266,7 @@ async def metering_by_service(
         )
         .select_from(BillingData)
     )
-    stmt = _apply_filters(base, date_start, date_end, provider, None)
+    stmt = _apply_filters(base, date_start, date_end, provider, None, products=products)
     stmt = _metering_scope(
         stmt,
         account_id=account_id,
@@ -311,6 +328,7 @@ async def metering_detail(
     date_end: str | None = None,
     provider: str | None = None,
     product: str | None = None,
+    products: list[str] | None = _PRODUCTS_QUERY,
     account_id: int | None = _ACCOUNT_ID_QUERY,
     account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
@@ -336,7 +354,7 @@ async def metering_detail(
             BillingData.usage_unit,
             BillingData.currency,
         ),
-        date_start, date_end, provider, product,
+        date_start, date_end, provider, product, products=products,
     )
     stmt = _metering_scope(
         stmt,
@@ -362,6 +380,7 @@ async def metering_detail_count(
     date_end: str | None = None,
     provider: str | None = None,
     product: str | None = None,
+    products: list[str] | None = _PRODUCTS_QUERY,
     account_id: int | None = _ACCOUNT_ID_QUERY,
     account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
@@ -372,7 +391,7 @@ async def metering_detail_count(
 ):
     stmt = _apply_filters(
         select(func.count()).select_from(BillingData),
-        date_start, date_end, provider, product,
+        date_start, date_end, provider, product, products=products,
     )
     stmt = _metering_scope(
         stmt,
@@ -444,6 +463,7 @@ async def metering_export(
     date_end: str | None = None,
     provider: str | None = None,
     product: str | None = None,
+    products: list[str] | None = _PRODUCTS_QUERY,
     account_id: int | None = _ACCOUNT_ID_QUERY,
     account_ids: list[int] | None = _ACCOUNT_IDS_QUERY,
     supply_source_id: int | None = Query(None),
@@ -466,7 +486,7 @@ async def metering_export(
             BillingData.usage_unit,
             BillingData.currency,
         ),
-        date_start, date_end, provider, product,
+        date_start, date_end, provider, product, products=products,
     )
     stmt = _metering_scope(
         stmt,
@@ -481,4 +501,101 @@ async def metering_export(
         _stream_csv(stmt),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=metering_billing_export.csv"},
+    )
+
+
+# ────────────────────── Taiji Push ingest ──────────────────────
+
+@router.post("/taiji/ingest", response_model=TaijiIngestResponse)
+async def taiji_ingest(
+    body: TaijiIngestRequest,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """
+    接收 Taiji 系统 Push 过来的原始请求日志。
+
+    鉴权约束（防止误用/越权）：
+      1. 必须走 API Key（X-API-Key），不允许浏览器 session / Casdoor Bearer
+      2. API Key 必须设置 allowed_cloud_account_ids，且仅含 1 个
+      3. 该 CloudAccount 的 provider 必须是 "taiji"
+      4. 该 CloudAccount 下必须有且仅有 1 个 DataSource（配置不歧义）
+
+    处理流程：
+      1. 原始日志按 (data_source_id, id) 主键幂等 upsert → taiji_log_raw
+      2. 识别本批涉及的日期（created_at 派生 UTC 日期）
+      3. 对每个涉及日期，**从 taiji_log_raw 重新全量聚合**覆盖 billing_data + token_usage
+      4. 自动建新 token 的 Project
+    """
+    # 1. 鉴权方式必须是 API Key
+    if principal.method != AuthMethod.API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="taiji ingest 必须使用 X-API-Key 鉴权",
+        )
+
+    # 2. API Key 必须限定单个 CloudAccount
+    restricted = principal.restricted_cloud_account_ids or []
+    if len(restricted) != 1:
+        raise HTTPException(
+            status_code=403,
+            detail=f"taiji ingest 的 API Key 必须限定 1 个 cloud_account_id（当前 {len(restricted)} 个）",
+        )
+    ca_id = int(restricted[0])
+
+    # 3. 验证 CloudAccount 是 taiji provider
+    ca = await db.get(CloudAccount, ca_id)
+    if not ca:
+        raise HTTPException(status_code=403, detail=f"cloud_account_id={ca_id} 不存在")
+    if ca.provider != "taiji":
+        raise HTTPException(
+            status_code=403,
+            detail=f"cloud_account_id={ca_id} 的 provider={ca.provider!r}，不是 taiji",
+        )
+
+    # 4. 定位该 CloudAccount 下的唯一活跃 DataSource
+    ds_rows = (await db.execute(
+        select(DataSource).where(
+            DataSource.cloud_account_id == ca_id,
+        )
+    )).scalars().all()
+    if len(ds_rows) == 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cloud_account_id={ca_id} 下没有 DataSource（先跑 seed_taiji_data_source.py）",
+        )
+    if len(ds_rows) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=f"cloud_account_id={ca_id} 下有 {len(ds_rows)} 个 DataSource（应仅 1 个）",
+        )
+    ds = ds_rows[0]
+    quota_per_usd = int((ds.config or {}).get("quota_per_usd") or 500000)
+
+    # 5. 调用同步引擎层（独立 DB 连接，与 FastAPI 异步 session 不冲突）
+    from app.services.sync_service import (
+        upsert_taiji_raw_logs,
+        reaggregate_from_taiji_raw,
+    )
+
+    logs_dicts = [lg.model_dump() for lg in body.logs]
+
+    store_stat = upsert_taiji_raw_logs(logs_dicts, data_source_id=ds.id)
+
+    dates = sorted({
+        dt.datetime.fromtimestamp(int(lg["created_at"]), tz=dt.timezone.utc).date().isoformat()
+        for lg in logs_dicts
+        if lg.get("created_at")
+    })
+
+    reagg = reaggregate_from_taiji_raw(ds.id, dates, quota_per_usd=quota_per_usd)
+
+    return TaijiIngestResponse(
+        received=len(body.logs),
+        stored_new=store_stat["stored_new"],
+        deduped=store_stat["deduped"],
+        dates_reaggregated=dates,
+        billing_rows_upserted=reagg["billing_rows"],
+        token_usage_rows_upserted=reagg["token_usage_rows"],
+        projects_created=reagg["projects_created"],
     )

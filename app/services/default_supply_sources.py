@@ -38,6 +38,15 @@ async def ensure_other_gcp_supply_source_id(db: AsyncSession) -> tuple[int, str]
 
 def ensure_other_gcp_supply_source_id_sync(session: Session) -> tuple[int, str]:
     """同步 Session 版本（Celery / 同步任务）。"""
+    return _ensure_reserved_supply_source_sync(session, provider="gcp")
+
+
+def ensure_other_taiji_supply_source_id_sync(session: Session) -> tuple[int, str]:
+    """Taiji 新 token 自动发现时挂靠的默认货源（同 GCP 的 '未分配资源组'）。"""
+    return _ensure_reserved_supply_source_sync(session, provider="taiji")
+
+
+def _ensure_reserved_supply_source_sync(session: Session, *, provider: str) -> tuple[int, str]:
     su = session.execute(
         select(Supplier).where(Supplier.name == RESERVED_UNASSIGNED_SUPPLIER_NAME).limit(1)
     ).scalars().first()
@@ -49,11 +58,11 @@ def ensure_other_gcp_supply_source_id_sync(session: Session) -> tuple[int, str]:
     ss = session.execute(
         select(SupplySource).where(
             SupplySource.supplier_id == su.id,
-            SupplySource.provider == "gcp",
+            SupplySource.provider == provider,
         )
     ).scalars().first()
     if not ss:
-        ss = SupplySource(supplier_id=su.id, provider="gcp")
+        ss = SupplySource(supplier_id=su.id, provider=provider)
         session.add(ss)
         session.flush()
     return ss.id, su.name

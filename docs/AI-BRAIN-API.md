@@ -2,7 +2,13 @@
 
 本文档供 **内部 AI 大脑 / 自动化程序** 在回答 **费用、用量、账单、资源归属** 等问题时调用 CloudCost 后端使用。
 
-- **范围**：以 **只读（GET）** 为主，标注请求参数与响应 JSON 结构（与 FastAPI 序列化一致：`date` 多为 `YYYY-MM-DD` 字符串，`datetime` 为 ISO8601；金额/用量在 JSON 中一般为 **number**，若见字符串多为 Decimal 序列化，按数值解析即可）。
+- **范围**：以 **只读（GET）** 为主。
+- **响应 JSON 约定**：
+  - `date` → `YYYY-MM-DD` 字符串
+  - `datetime` → 本地时间 ISO8601（**无时区后缀**，例：`2026-04-18T18:01:19.142386`）
+  - 金额 / 用量（**重要**）：
+    - 聚合型 / 仪表盘类接口（`/api/dashboard/*`、`/api/service-accounts/{id}/costs`、`/api/service-accounts/daily-report`、`/api/dashboard/overview`）→ **JSON number**（float）
+    - 原始明细类接口（`/api/metering/*`、`/api/billing/detail`）→ **JSON string**（后端保留 Decimal 精度），需 `float(...)` / `parseFloat(...)` 解析
 - **完整路由清单**：见 [API.md](./API.md)。
 
 ---
@@ -211,19 +217,25 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 { "status": "ok" }
 ```
 
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `status` | string | 总是 `"ok"`；仅此一字段。失败时会被 FastAPI 500 覆盖，不返回此对象 |
+
 ---
 
 ### 4.2 `GET /api/sync/last`
 
-**用途**：回答「数据同步到什么时候」。模块：`sync`，角色：`cloud_ops`。
+**用途**：回答「数据同步到什么时候」。模块：`sync`，角色：`cloud_ops`（含 admin）。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
-{ "last_sync": "2026-04-12T08:30:00" | null }
+{ "last_sync": "2026-04-18T18:01:19.142386" }
 ```
 
-`last_sync` 为最近一次 **成功** 同步结束时间（ISO8601）；无记录时为 `null`。
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `last_sync` | string \| null | 最近一次 **成功** 同步结束时间 ISO8601（本地时间，无时区）。从未同步过时为 `null` |
 
 ---
 
@@ -239,31 +251,42 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 | `granularity` | string | 否 | `daily` \| `weekly` \| `monthly`，默认 `daily` |
 | `service_limit` | int | 否 | 1–100，默认 10 |
 
-**出参**：
+**出参**（真实样例，截断）：
 
 ```json
 {
   "overview": {
-    "total_cost": 0,
-    "prev_month_cost": 0,
-    "mom_change_pct": 0,
-    "active_projects": 0
+    "total_cost": 149785.098288,
+    "prev_month_cost": 938396.218412,
+    "mom_change_pct": -84.04,
+    "active_projects": 7
   },
   "trend": [
-    {
-      "date": "2026-04-01",
-      "cost": 0,
-      "cost_by_provider": { "aws": 0, "gcp": 0 }
-    }
+    { "date": "2026-04-01", "cost": 7399.860517,
+      "cost_by_provider": { "aws": 466.038035, "azure": 962.156064, "gcp": 5971.666418 } }
   ],
   "by_provider": [
-    { "provider": "aws", "cost": 0, "percentage": 0 }
+    { "provider": "gcp",   "cost": 124735.119318, "percentage": 83.28 },
+    { "provider": "azure", "cost": 18058.538325,  "percentage": 12.06 }
   ],
   "by_service": [
-    { "product": "Compute", "cost": 0, "percentage": 0 }
+    { "product": "Vertex AI",        "cost": 124410.727567, "percentage": 83.06 },
+    { "product": "Virtual Machines", "cost": 6202.288351,   "percentage": 4.14 }
   ]
 }
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `overview.total_cost` | number | 当月总费用（USD，对当前身份可见范围求和） |
+| `overview.prev_month_cost` | number | 上月同口径总费用 |
+| `overview.mom_change_pct` | number | 环比变化 %，保留两位小数，可能负值 |
+| `overview.active_projects` | integer | `status=active` 的服务账号数 |
+| `trend[].date` | string | `YYYY-MM-DD` |
+| `trend[].cost` | number | 当日全 provider 合计费用 |
+| `trend[].cost_by_provider` | object | 形如 `{ "aws":…, "gcp":…, "azure":… }`；只包含当日有数据的 provider |
+| `by_provider[]` | array | 按 provider 当月累计，`cost` + `percentage`（占 total_cost 百分比，保留两位小数）|
+| `by_service[]` | array | Top N 服务（`product` 原样字符串），N 由 `service_limit` 控制 |
 
 ---
 
@@ -273,14 +296,18 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **入参（Query）**：`month`（必填，`YYYY-MM`）。
 
-**出参**：
+**出参**（真实样例）：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `total_cost` | number | 当月总费用 |
-| `prev_month_cost` | number | 上月总费用 |
-| `mom_change_pct` | number | 环比变化百分比 |
-| `active_projects` | integer | 状态为 active 的项目数 |
+```json
+{
+  "total_cost": 149785.098288,
+  "prev_month_cost": 938396.218412,
+  "mom_change_pct": -84.04,
+  "active_projects": 7
+}
+```
+
+字段同 §4.3 `overview`。
 
 ---
 
@@ -294,23 +321,34 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 |------|------|------|------|
 | `date_start` | string | 否 | `YYYY-MM-DD` |
 | `date_end` | string | 否 | `YYYY-MM-DD` |
-| `provider` | string | 否 | `aws` / `gcp` / `azure` |
-| `product` | string | 否 | 产品/服务名 |
-| `account_id` | int | 否 | 服务账号 ID |
+| `provider` | string | 否 | `aws` / `gcp` / `azure` / `taiji` |
+| `product` | string | 否 | 产品/服务/模型名（单值，保留兼容）|
+| `products` | list[string] | 否 | **v1.1 新增**；多个服务名，重复 query：`products=gpt-4o&products=claude`。非空时覆盖 `product` |
+| `account_id` | int | 否 | 服务账号 ID（单值，保留兼容）|
+| `account_ids` | list[int] | 否 | **v1.1 新增**；多个服务账号 ID，重复 query：`account_ids=1&account_ids=2`。非空时覆盖 `account_id` |
 | `supply_source_id` | int | 否 | 货源 ID |
 | `supplier_name` | string | 否 | 供应商名称 |
 | `data_source_id` | int | 否 | 数据源 ID |
 
-**出参**：
+**作用域优先级**：`account_ids > account_id > supply_source_id > supplier_name`（满足前面的就不再叠加后面的）。
+
+**出参**（真实样例，注意 `total_cost` / `total_usage` 是**字符串**）：
 
 ```json
 {
-  "total_cost": 0,
-  "total_usage": 0,
-  "record_count": 0,
-  "service_count": 0
+  "total_cost": "149785.098288",
+  "total_usage": "55555350118.525461",
+  "record_count": 62016,
+  "service_count": 43
 }
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `total_cost` | **string**（Decimal）| 筛选范围内的费用合计，USD。调用方自行 `float(...)` |
+| `total_usage` | **string**（Decimal）| 用量合计。注意不同 `product` 的 `usage_unit` 不同，直接求和意义有限 |
+| `record_count` | integer | 命中的 billing_data 行数 |
+| `service_count` | integer | 不同 `product` 去重数 |
 
 ---
 
@@ -318,18 +356,23 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **用途**：按日聚合费用与用量。入参同 `metering/summary`。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
-  {
-    "date": "2026-04-01",
-    "usage_quantity": 0,
-    "cost": 0,
-    "record_count": 0
-  }
+  { "date": "2026-04-01", "usage_quantity": "2327753993.353517",
+    "cost": "7399.860517", "record_count": 2745 },
+  { "date": "2026-04-02", "usage_quantity": "1300687882.204744",
+    "cost": "6175.577245", "record_count": 2974 }
 ]
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `date` | string | `YYYY-MM-DD` |
+| `cost` | **string**（Decimal）| 当日费用合计 |
+| `usage_quantity` | **string**（Decimal）| 当日用量合计（跨 product；单位不定）|
+| `record_count` | integer | 当日命中的明细行数 |
 
 ---
 
@@ -337,19 +380,24 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **用途**：按服务聚合（Top N 分析）。入参同 summary（无 `product` 过滤）。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
-  {
-    "product": "Amazon EC2",
-    "usage_quantity": 0,
-    "usage_unit": "Hours",
-    "cost": 0,
-    "record_count": 0
-  }
+  { "product": "Vertex AI", "usage_quantity": "55518458336.183727",
+    "usage_unit": "month", "cost": "124410.727567", "record_count": 58924 },
+  { "product": "Cloud Text-to-Speech API", "usage_quantity": "18315835.000000",
+    "usage_unit": "count", "cost": "315.170942", "record_count": 101 }
 ]
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `product` | string | 原样服务名（含空格大小写；同名但不同 `usage_unit` 会分别出现，后端按 `(product, unit)` 分组再在此合并，见 `usage_unit`）|
+| `cost` | **string**（Decimal）| 该服务筛选范围内的费用合计 |
+| `usage_quantity` | **string**（Decimal）| 用量合计；仅在**该服务使用单一 `usage_unit`** 时可直接阅读 |
+| `usage_unit` | string \| null | 该服务的用量单位；如果同名 product 有多种单位，后端取任一 |
+| `record_count` | integer | 行数 |
 
 ---
 
@@ -357,26 +405,41 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **用途**：原始明细行分页。入参在 summary 基础上增加 `page`（默认 1）、`page_size`（默认 50，最大 500）。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
   {
-    "id": 1,
-    "date": "2026-04-01",
-    "provider": "aws",
-    "data_source_id": 1,
-    "project_id": "proj-xxx",
-    "product": "EC2",
-    "usage_type": "BoxUsage",
-    "region": "ap-east-1",
-    "cost": 0,
-    "usage_quantity": 0,
-    "usage_unit": "Hrs",
+    "id": 1819145,
+    "date": "2026-04-18",
+    "provider": "gcp",
+    "data_source_id": 3,
+    "project_id": "ysgemini-20260324",
+    "product": "Cloud Text-to-Speech API",
+    "usage_type": "Cloud TTS API text input token count for Gemini 2.5 Pro",
+    "region": "asia-southeast1",
+    "cost": "0.031815",
+    "usage_quantity": "31815.000000",
+    "usage_unit": "count",
     "currency": "USD"
   }
 ]
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | integer | 明细主键（`billing_data.id`）|
+| `date` | string | `YYYY-MM-DD` 账单日期 |
+| `provider` | string | `aws` / `gcp` / `azure` |
+| `data_source_id` | integer | 数据源 FK |
+| `project_id` | string | **云厂商侧项目 ID**（GCP project / Azure subscription / AWS account），不是本地 `projects.id` |
+| `product` | string \| null | 服务名 |
+| `usage_type` | string \| null | 计费类型 / SKU 名 |
+| `region` | string \| null | 区域 |
+| `cost` | **string**（Decimal）| 该条费用 USD |
+| `usage_quantity` | **string**（Decimal）| 用量 |
+| `usage_unit` | string \| null | 用量单位 |
+| `currency` | string | 总是 `"USD"` |
 
 ---
 
@@ -384,7 +447,11 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **用途**：与 `detail` 同筛选条件下的总条数。
 
-**出参**：`{ "total": 0 }`
+**出参**：`{ "total": 62016 }`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `total` | integer | 行数；分页计算用 |
 
 ---
 
@@ -404,27 +471,35 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 | `page` | int | 默认 1 |
 | `page_size` | int | 默认 50，最大 500 |
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
   {
-    "id": 1,
-    "date": "2026-04-01",
-    "provider": "aws",
-    "data_source_id": 1,
-    "project_id": "xxx",
-    "project_name": "xxx",
-    "product": "EC2",
-    "usage_type": "BoxUsage",
-    "region": "us-east-1",
-    "cost": 0,
-    "usage_quantity": 0,
-    "usage_unit": "Hrs",
+    "id": 1759843,
+    "date": "2026-04-18",
+    "provider": "azure",
+    "data_source_id": 2,
+    "project_id": "45d7a360-af09-40fc-9afc-56dc475245ec",
+    "project_name": "Xmind运营学习专用2026",
+    "product": "API Management",
+    "usage_type": "Consumption Calls",
+    "region": "southeastasia",
+    "cost": "0.000000",
+    "usage_quantity": "0.083300",
+    "usage_unit": "10K",
     "currency": "USD"
   }
 ]
 ```
+
+字段大致同 `/metering/detail`，额外字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `project_name` | string \| null | 云厂商侧返回的项目显示名（AWS 未必有；GCP/Azure 多数有）|
+
+`cost` / `usage_quantity` 仍为 **string (Decimal)**。
 
 ---
 
@@ -432,7 +507,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **用途**：与 `billing/detail` 相同筛选下的总行数。
 
-**出参**：`{ "total": 0 }`
+**出参**：`{ "total": 62016 }`
 
 ---
 
@@ -440,18 +515,123 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ### 5.1 Dashboard 维度拆分
 
-模块：`dashboard`，角色：`cloud_viewer` / `cloud_ops` / `cloud_finance`。数据按可见数据源过滤。
+模块：`dashboard`，角色：`cloud_viewer` / `cloud_ops` / `cloud_finance`（含 admin）。数据按可见数据源过滤。**所有 cost 字段均为 JSON number（float）**。
 
-| 路径 | 入参（Query） | 出参摘要 |
-|------|----------------|----------|
-| `GET /api/dashboard/trend` | `start`、`end`：`YYYY-MM`；`granularity` | `[{ "date", "cost", "cost_by_provider": {} }]` |
-| `GET /api/dashboard/by-provider` | `month` | `[{ "provider", "cost", "percentage" }]` |
-| `GET /api/dashboard/by-category` | `month` | `[{ "category_id", "name", "original_cost", "markup_rate", "final_cost" }]` |
-| `GET /api/dashboard/by-project` | `month`，`limit` 1–100 | `[{ "project_id", "name", "provider", "cost" }]` |
-| `GET /api/dashboard/by-service` | `month`，`provider`，`limit` 1–100 | `[{ "product", "cost", "percentage" }]` |
-| `GET /api/dashboard/by-region` | `month` | `[{ "region", "provider", "cost" }]` |
-| `GET /api/dashboard/top-growth` | `period` 默认 `7d`，`limit` 1–50 | `[{ "project_id", "name", "current_cost", "previous_cost", "growth_pct" }]` |
-| `GET /api/dashboard/unassigned` | `month` | `[{ "project_id", "name", "provider", "cost", "status" }]` |
+#### `GET /api/dashboard/trend`
+
+入参：`start`、`end`（均 `YYYY-MM`）；`granularity`（`daily` 默认 / `weekly` / `monthly`）。
+
+出参：`[{ date, cost, cost_by_provider }]`，结构同 §4.3 `trend[]`。
+
+#### `GET /api/dashboard/by-provider`
+
+入参：`month`。出参真实样例：
+
+```json
+[
+  { "provider": "gcp",   "cost": 124735.119318, "percentage": 83.28 },
+  { "provider": "azure", "cost": 18058.538325,  "percentage": 12.06 }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `provider` | `aws`/`gcp`/`azure` |
+| `cost` | 当月累计 USD |
+| `percentage` | 占当月总费用百分比（两位小数）|
+
+#### `GET /api/dashboard/by-category`
+
+入参：`month`。出参真实样例：
+
+```json
+[{ "category_id": 2, "name": "default", "original_cost": 24846.617897,
+   "markup_rate": 1.15, "final_cost": 28573.61058155 }]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `category_id`、`name` | 费用分类 |
+| `original_cost` | 原始成本（未加价）|
+| `markup_rate` | 加价率（1.0 = 不加价）|
+| `final_cost` | = `original_cost × markup_rate` |
+
+#### `GET /api/dashboard/by-project`
+
+入参：`month`，`limit`（1–100，默认 10）。出参真实样例：
+
+```json
+[
+  { "project_id": "xianlong-2", "name": "xianlong-2",
+    "provider": "gcp", "cost": 58749.779907 }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `project_id` | **云厂商侧项目 ID（字符串）**，即 GCP project / Azure subscription / AWS account。**不是**本地 `projects.id` |
+| `name` | 账单中的项目名（云厂商返回）|
+| `provider` | `aws`/`gcp`/`azure` |
+| `cost` | 当月累计 USD |
+
+#### `GET /api/dashboard/by-service`
+
+入参：`month`，`provider`（可选），`limit`（1–100）。出参真实样例：
+
+```json
+[
+  { "product": "Vertex AI", "cost": 124410.727567, "percentage": 83.06 },
+  { "product": "Virtual Machines", "cost": 6202.288351, "percentage": 4.14 }
+]
+```
+
+字段同 `dashboard/by-provider`（`percentage` 相对当月 total）。
+
+#### `GET /api/dashboard/by-region`
+
+入参：`month`。出参真实样例：
+
+```json
+[
+  { "region": "asia-east1",      "provider": "gcp", "cost": 38836.928387 },
+  { "region": "asia-southeast1", "provider": "gcp", "cost": 9817.383452 }
+]
+```
+
+#### `GET /api/dashboard/top-growth`
+
+入参：`period`（默认 `7d`），`limit`（1–50）。出参真实样例：
+
+```json
+[
+  { "project_id": "lyww-01", "name": "lyww-01",
+    "current_cost": 3775.070699, "previous_cost": 5e-05,
+    "growth_pct": 7550141298.0 }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `project_id` | 外部项目 ID 字符串 |
+| `current_cost` / `previous_cost` | 本周期 / 对比周期累计 USD |
+| `growth_pct` | 增幅 %，`previous` 接近 0 时可能非常大 |
+
+#### `GET /api/dashboard/unassigned`
+
+入参：`month`。出参真实样例（未与本地 `projects` 表关联上的外部项目）：
+
+```json
+[
+  { "project_id": "xianlong-2", "name": "xianlong-2",
+    "provider": "gcp", "cost": 58749.779907, "status": null }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `project_id` / `name` / `provider` | 同 by-project |
+| `cost` | 当月累计 USD |
+| `status` | 总是 `null`（`projects` 表里没有对应行），保留字段以便未来扩展 |
 
 ---
 
@@ -461,24 +641,36 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **入参（Query）**：`provider`、`status`、`customer_code`（按客户编号反查）、`page`、`page_size`。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
   {
-    "id": 1,
-    "name": "string",
-    "supply_source_id": 1,
-    "supplier_name": "string",
+    "id": 7,
+    "name": "AWS-Main",
+    "supply_source_id": 2,
+    "supplier_name": "神州泰岳",
     "provider": "aws",
-    "external_project_id": "string",
-    "status": "active",
+    "external_project_id": "675139393309",
+    "status": "standby",
     "order_method": null,
-    "customer_codes": ["C001", "C002"],
-    "created_at": "2026-04-01T00:00:00"
+    "customer_codes": [],
+    "created_at": "2026-04-08T10:19:32.565267"
   }
 ]
 ```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | integer | 本地服务账号主键 |
+| `name` | string | 账号显示名 |
+| `supply_source_id` / `supplier_name` | integer / string | 所属货源 + 供应商名 |
+| `provider` | string | `aws`/`gcp`/`azure`（来自 supply_source）|
+| `external_project_id` | string | 云厂商侧 ID（AWS account ID / GCP project / Azure subscription）|
+| `status` | string | `active` / `standby` / `inactive` |
+| `order_method` | string \| null | 仅 Azure 账号有意义（MCCL-EA / HK CSP 等下单方式）|
+| `customer_codes` | string[] | 销售系统下发的客户编号，大写归一化；空数组 = 未分配 |
+| `created_at` | string | 创建时间 ISO8601 |
 
 **`status` 派生规则**（后端 `_recompute_status`）：
 
@@ -486,69 +678,102 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 - 否则：`customer_codes` 非空 → `active`；为空 → `standby`
 - 触发时机：`PUT /{id}` 带 `customer_codes`、`POST /{id}/activate`、`POST /customer-assignments/sync` 后
 
-`customer_codes`：由销售系统下发的外部客户编号数组，N:M 语义（一个客户可关联多个服务账号，一个服务账号可关联多个客户）。全部自动归一化为大写。
-
 ---
 
 ### 5.3 `GET /api/service-accounts/{account_id}`
 
-**出参**（含历史，**仅字段名** `secret_fields`，无密钥内容）：
+**出参**（真实样例，截取）：
 
 ```json
 {
-  "id": 1,
-  "name": "string",
-  "supply_source_id": 1,
-  "supplier_id": 1,
-  "supplier_name": "string",
+  "id": 7,
+  "name": "AWS-Main",
+  "supply_source_id": 2,
+  "supplier_id": 3,
+  "supplier_name": "神州泰岳",
   "provider": "aws",
-  "external_project_id": "string",
-  "status": "active",
+  "external_project_id": "675139393309",
+  "status": "standby",
   "notes": null,
   "order_method": null,
-  "customer_codes": ["C001", "C002"],
-  "secret_fields": ["client_id"],
-  "created_at": "2026-04-01T00:00:00",
+  "customer_codes": [],
+  "secret_fields": ["aws_access_key_id", "aws_secret_access_key", "account_id"],
+  "created_at": "2026-04-08T10:19:32.565267",
   "history": [
-    {
-      "id": 1,
-      "action": "created",
-      "from_status": null,
-      "to_status": "active",
-      "operator": null,
-      "customer_code": null,
-      "notes": null,
-      "created_at": "2026-04-01T00:00:00"
-    }
+    { "id": 39, "action": "activated", "from_status": "standby", "to_status": "standby",
+      "operator": "xiaohei", "customer_code": null, "notes": null,
+      "created_at": "2026-04-18T19:21:38.081899" },
+    { "id": 36, "action": "customer_unbound", "from_status": "active", "to_status": "active",
+      "operator": "sales", "customer_code": "SYNC_C1", "notes": "sales batch sync",
+      "created_at": "2026-04-18T19:10:00.000000" }
   ]
 }
 ```
 
-`history[].action` 枚举：`created` / `suspended` / `activated` / `customer_bound` / `customer_unbound` / `customer_batch_synced`。当 action 为 `customer_*` 时，`customer_code` 字段非空。
+列表字段同 §5.2。详情额外字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `supplier_id` | integer | 供应商 FK |
+| `notes` | string \| null | 账号备注 |
+| `secret_fields` | string[] | 账号凭据字段**名**（不含值）；例如 aws_access_key_id、client_secret |
+| `history[]` | array | 状态变更 + 客户编号变更历史，按 `created_at DESC` |
+| `history[].action` | string | 见下表 |
+| `history[].from_status` / `to_status` | string \| null | 仅状态类事件非空 |
+| `history[].operator` | string \| null | 触发者用户名；销售系统同步走 `"sales-sync"`/机器账号名 |
+| `history[].customer_code` | string \| null | 仅 `customer_*` 事件非空 |
+| `history[].notes` | string \| null | 销售批量同步会写 `"sales batch sync"` |
+
+`action` 枚举：
+
+| 值 | 含义 |
+|---|---|
+| `created` | 创建账号（注：老数据可能记为 `assigned`）|
+| `suspended` | 人工停用 |
+| `activated` | 从停用/备用恢复 |
+| `customer_bound` | 绑定一个客户编号 |
+| `customer_unbound` | 解除一个客户编号 |
+| `customer_batch_synced` | 销售批量同步（此事件单独记录时使用；通常逐个写 bound/unbound）|
 
 ---
 
 ### 5.4 `GET /api/service-accounts/{account_id}/costs`
 
+**角色**：任意登录（已放宽）。
+
 **入参（Query）**：`start_date`、`end_date`（必填，`YYYY-MM-DD`）。
 
-**出参**：
+**出参**（真实样例，截取）：
 
 ```json
 {
-  "total_cost": 0,
-  "total_usage": 0,
+  "total_cost": 6991.440645000001,
+  "total_usage": 5303.442484,
   "services": [
-    { "service": "EC2", "cost": 0, "usage_quantity": 0, "usage_unit": "Hrs" }
+    { "service": "Claude Opus 4.6 (Amazon Bedrock Edition)",
+      "cost": 5280.532382, "usage_quantity": 2690.11845, "usage_unit": "Units" },
+    { "service": "Claude Sonnet 4.6 (Amazon Bedrock Edition)",
+      "cost": 1246.2185079999997, "usage_quantity": 1582.6575039999998, "usage_unit": "Units" }
   ],
   "daily": [
-    { "date": "2026-04-01", "cost": 0, "usage_quantity": 0 }
+    { "date": "2026-04-01", "cost": 45.23, "usage_quantity": 12.0 }
   ],
   "daily_by_service": [
-    { "date": "2026-04-01", "service": "EC2", "cost": 0, "usage_quantity": 0, "usage_unit": "Hrs" }
+    { "date": "2026-04-01", "service": "AWS Cost Explorer",
+      "cost": 0.01, "usage_quantity": 1.0, "usage_unit": "Requests" }
   ]
 }
 ```
+
+**本接口的 cost/usage 是 JSON number（float）**（与 `/metering/*` 不同）。
+
+| 字段 | 说明 |
+|---|---|
+| `total_cost` / `total_usage` | 本账号在 date 区间内的汇总 |
+| `services[].service` | 产品名（对应 billing_data.product）|
+| `services[].usage_unit` | 该产品的用量单位；该产品有多个单位时，后端取其一 |
+| `daily[]` | 按日费用+用量合计 |
+| `daily_by_service[]` | 按日 × 服务拆分（用于堆叠图）|
 
 ---
 
@@ -558,21 +783,32 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **入参（Query）**：`start_date`、`end_date`（必填），`provider`（可选）。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
   {
-    "account_id": 1,
-    "account_name": "string",
-    "provider": "aws",
-    "external_project_id": "string",
+    "account_id": 88,
+    "account_name": "chuhai 自用",
+    "provider": "azure",
+    "external_project_id": "09e4b3a6-8159-4f14-b108-e4a18ace9212",
     "date": "2026-04-01",
-    "product": "EC2",
-    "cost": 0
+    "product": "Foundry Models",
+    "cost": 2.438673
   }
 ]
 ```
+
+每行 = (账号, 日期, 产品) 聚合后的 cost，**JSON number（float）**。按 `date`→`external_project_id`→`product` 排序。
+
+| 字段 | 说明 |
+|---|---|
+| `account_id` | 本地 `projects.id` |
+| `account_name` | 账号显示名（本地 `projects.name`）|
+| `provider` | `aws`/`gcp`/`azure` |
+| `external_project_id` | 云厂商侧 ID |
+| `date` / `product` | 账单日期 + 服务 |
+| `cost` | USD |
 
 > 注：此接口的"每条记录按 (账号, 日期, 产品) 聚合"；业务含义是前端『统计』页。物理挂在 `service_accounts` 路由下，但已做端点级权限区分——只读端点（列表 / 详情 / costs / daily-report）任意登录可用，敏感端点（创建/删除/暂停/恢复/凭据/批量同步）需 `cloud_admin`。
 
@@ -580,59 +816,64 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ### 5.6 `GET /api/projects/` 与 `GET /api/projects/{project_id}`
 
-**模块：`projects`，角色：任意登录**。
+**模块：`projects`，角色：任意登录（读）；写需 `cloud_admin`**。
+
+`/api/projects` 是老的 Project CRUD，**前端不使用**。和 `/api/service-accounts` 指向同一个 `projects` 表，但返回字段和交互语义略有差异。AI 通常调 `service-accounts/` 即可；这组接口仅供历史集成。
 
 **列表入参**：`status`、`provider`、`page`、`page_size`。
 
-**出参**：
+**出参**（真实样例，单对象）：
 
 ```json
 {
-  "id": 1,
-  "name": "string",
-  "supply_source_id": 1,
+  "id": 7,
+  "name": "AWS-Main",
+  "supply_source_id": 2,
   "provider": "aws",
-  "supplier_name": "string",
-  "external_project_id": "string",
+  "supplier_name": "神州泰岳",
+  "external_project_id": "675139393309",
   "data_source_id": 1,
-  "category_id": null,
-  "status": "active",
+  "category_id": 2,
+  "status": "standby",
   "notes": null,
-  "created_at": "2026-04-01T00:00:00",
-  "updated_at": "2026-04-01T00:00:00"
+  "created_at": "2026-04-08T10:19:32.565267",
+  "updated_at": "2026-04-18T18:53:30.265359"
 }
 ```
+
+| 字段 | 说明 |
+|---|---|
+| `data_source_id` | FK → data_sources（对应 /api/data-sources/ 条目）|
+| `category_id` | FK → categories（费用分类 markup_rate）；可为 null |
+| `updated_at` | 最近一次 update 时间 |
+| 其它字段 | 同 §5.2 |
+
+> 注意：本接口**不返回** `customer_codes`、`order_method`、`history`。需要这些用 `/api/service-accounts/{id}`。
 
 ---
 
 ### 5.7 `GET /api/bills/`
 
-**模块：`bills`，角色：`cloud_finance`**。
+**模块：`bills`，角色：`cloud_finance`（含 admin）**。
 
 **入参（Query）**：`month`（`YYYY-MM`）、`status`、`page`、`page_size`。
 
-**出参**：
+**出参**：实际调用该账号当月为空 `[]`（尚未生成账单）。字段表（来自后端 schema）：
 
-```json
-[
-  {
-    "id": 1,
-    "month": "2026-04",
-    "category_id": 1,
-    "provider": "aws",
-    "original_cost": 0,
-    "markup_rate": 1,
-    "final_cost": 0,
-    "adjustment": 0,
-    "status": "draft",
-    "confirmed_at": null,
-    "notes": null,
-    "created_at": "2026-04-01T00:00:00"
-  }
-]
-```
-
-`status`：`draft` / `confirmed` / `paid`。
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | integer | 账单 id |
+| `month` | string | `YYYY-MM` |
+| `category_id` | integer | 费用分类 FK |
+| `provider` | string | aws/gcp/azure |
+| `original_cost` | string/number | 原始成本 USD |
+| `markup_rate` | string/number | 加价率（1.0=不加价）|
+| `final_cost` | string/number | 加价后金额 |
+| `adjustment` | string/number | 人工调整额（正负皆可）|
+| `status` | string | `draft` / `confirmed` / `paid` |
+| `confirmed_at` | string \| null | 确认时间 |
+| `notes` | string \| null | 备注 |
+| `created_at` | string | 创建时间 |
 
 ---
 
@@ -648,46 +889,46 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **入参（Query）**：`month`（可选，`YYYY-MM`，默认当月）。
 
-**出参**：
+**出参**：空数组 `[]`（该环境当前未配置告警规则）。字段表：
 
-```json
-[
-  {
-    "rule_id": 1,
-    "rule_name": "string",
-    "threshold_type": "monthly_budget",
-    "threshold_value": 0,
-    "actual": 0,
-    "pct": 0,
-    "triggered": false,
-    "account_name": "string",
-    "provider": "aws",
-    "external_project_id": "string"
-  }
-]
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `rule_id` | integer | 规则 ID |
+| `rule_name` | string | 规则显示名 |
+| `threshold_type` | string | `monthly_budget` / `daily_budget` / `growth_rate` / `monthly_minimum_commitment` 等 |
+| `threshold_value` | number | 阈值 |
+| `actual` | number | 当前实际值 |
+| `pct` | number | `actual / threshold_value × 100`（增长率类型为差额 %）|
+| `triggered` | boolean | 是否触发 |
+| `account_name` | string | 关联的服务账号名（可能为 null，表示全局规则）|
+| `provider` | string | aws/gcp/azure |
+| `external_project_id` | string | 云厂商侧 ID |
 
 ---
 
 ### 5.10 `GET /api/suppliers/supply-sources/all`
 
-**模块：`suppliers`，角色：任意登录**。
+**模块：`suppliers`，角色：`cloud_admin`**（整个 suppliers 模块都是 admin）。
 
-**入参**：`supplier_id`（可选）。
+**入参**：`supplier_id`（可选，过滤某个供应商）。
 
-**出参**：
+**出参**（真实样例）：
 
 ```json
 [
-  {
-    "id": 1,
-    "supplier_id": 1,
-    "supplier_name": "string",
-    "provider": "aws",
-    "account_count": 0
-  }
+  { "id": 3, "supplier_id": 1, "supplier_name": "长虹佳华",
+    "provider": "azure", "account_count": 3 },
+  { "id": 5, "supplier_id": 2, "supplier_name": "内部测试专用",
+    "provider": "gcp", "account_count": 1 }
 ]
 ```
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 货源 ID（`supply_sources.id`）|
+| `supplier_id` / `supplier_name` | 所属供应商 |
+| `provider` | 该货源对应的云 |
+| `account_count` | 该货源下的服务账号数 |
 
 ---
 
@@ -697,33 +938,94 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **入参**：`provider`、`account_id`、`supply_source_id`、`supplier_name`、`data_source_id`。
 
-**出参**：
+**出参**（真实样例，截取）：
 
 ```json
-[{ "product": "Amazon EC2" }]
+[
+  { "product": "Amazon Simple Notification Service" },
+  { "product": "Amazon Simple Queue Service" },
+  { "product": "Vertex AI" }
+]
 ```
+
+单字段 `product`，排重 + 排序。用于前端 Metering 页的服务过滤下拉。
 
 ---
 
 ## 6. P2 可选接口
 
-| 路径 | 用途 | 备注 |
-|------|------|------|
-| `GET /api/categories/` | 费用分类字典 | 含 `markup_rate` |
-| `GET /api/exchange-rates/` | 汇率 | Query：`date`，`from_currency` |
-| `GET /api/data-sources/` | 数据源列表 | 与同步渠道、分类关联 |
-| `GET /api/resources/` | 资源清单分页 | `provider`，`project_id`，`resource_type`。数据按可见数据源过滤 |
-| `GET /api/resources/{id}` | 单条资源 | 含 `monthly_cost` |
-| `GET /api/billing/export` | CSV 流 | 大流量，适合工具落盘 |
-| `GET /api/metering/export` | CSV 流 | 同上 |
+### 6.1 `GET /api/categories/`
+
+**角色：`cloud_admin`**（整个 categories 模块 admin-only）。
+
+**出参**（真实样例）：
+
+```json
+[
+  { "id": 1, "name": "????", "markup_rate": "1.0000",
+    "description": "test",
+    "created_at": "2026-04-08T03:43:02.546432",
+    "updated_at": "2026-04-08T03:43:02.546432" },
+  { "id": 2, "name": "default", "markup_rate": "1.1500",
+    "description": "default channel",
+    "created_at": "2026-04-08T03:43:28.568331",
+    "updated_at": "2026-04-08T10:23:02.934844" }
+]
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `markup_rate` | **string**（Decimal，4 位小数）| 加价率 |
+| `name` | string | 分类名；历史数据可能含占位符 |
+
+### 6.2 `GET /api/exchange-rates/`
+
+**角色：任意登录**（读）。入参：`date`（可选）、`from_currency`。
+
+**出参**：数组形如 `[{ from_currency, to_currency, rate, date }]`；该环境返回 `[]`。
+
+### 6.3 `GET /api/data-sources/`
+
+**角色：`cloud_admin`**。
+
+**出参**（真实样例）：
+
+```json
+[
+  {
+    "id": 1,
+    "name": "AWS-675139393309",
+    "cloud_account_id": 1,
+    "category_id": 2,
+    "config": { "account_id": "675139393309" },
+    "last_sync_at": "2026-04-18T18:00:19.046951",
+    "sync_status": "success",
+    "is_active": true,
+    "created_at": "2026-04-08T03:48:09.812203"
+  }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `config` | 采集器配置 JSONB；Azure 会有 `subscription_id`/`collect_mode`/`cost_metric`；AWS 仅 `account_id` |
+| `last_sync_at` / `sync_status` | 最近一次同步时间与结果 |
+
+### 6.4 `GET /api/resources/` + `GET /api/resources/{id}`
+
+**角色：任意登录**（读）。入参：`provider`、`project_id`、`resource_type`、`page`、`page_size`。数据按可见数据源过滤。该环境返回 `[]`。字段表（资源清单 schema）：`id`、`provider`、`resource_type`、`resource_id`、`name`、`region`、`project_id`、`monthly_cost`（number，最近一个月估算）、`tags`。
+
+### 6.5 `GET /api/billing/export` / `/api/metering/export`
+
+CSV 流式下载，大流量，适合工具落盘，不建议作为模型上下文。入参同 `detail`，响应 `Content-Type: text/csv`。
 
 ---
 
-## 6.5 销售系统专用接口（客户编号下发）
+## 7. 销售系统专用接口（客户编号下发）
 
 > 面向"销售系统对接"，**AI 大脑不调用**。模块：`service_accounts`；**这两条是写操作，需 `cloud_admin`**（`service_accounts` 只读端点已放宽到任意登录，但写仍然 admin-only）。建议通过 Casdoor `client_credentials` 拿 token。
 
-### 6.5.1 `POST /api/service-accounts/customer-assignments/sync`
+### 7.1 `POST /api/service-accounts/customer-assignments/sync`
 
 **用途**：销售系统把"客户编号 ↔ 服务账号"关联批量下发。幂等。
 
@@ -769,7 +1071,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
-### 6.5.2 `PUT /api/service-accounts/{account_id}`（仅 `customer_codes` 字段）
+### 7.2 `PUT /api/service-accounts/{account_id}`（仅 `customer_codes` 字段）
 
 **用途**：单个服务账号的客户编号**全量覆盖**（和 `secret_data` 同语义：`undefined` 不动；`[]` 清空；`[...]` 替换）。
 
@@ -787,7 +1089,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 7. 禁止对 AI 开放的接口
+## 8. 禁止对 AI 开放的接口
 
 以下接口 **不应** 加入 AI 可调工具列表：
 
@@ -800,12 +1102,27 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 | Azure 部署 | `/api/azure-deploy/*` | 需 `cloud_admin`，涉及 ARM Token 与资源创建 |
 | 跨租户授权 | `/api/azure-consent/*` | 需 `cloud_admin`，改订阅授权态 |
 | 认证管理 | `/api/admin/users/*` · `/api/api-keys/*` · `/api/api-permissions/*` | 需 `cloud_admin`，管理员专用 |
+| Taiji 数据回灌 | `POST /api/metering/taiji/ingest` | v1.1 新增；Taiji 平台专用写入通道，严格 `X-API-Key` 鉴权 + 绑定到 taiji CloudAccount，不对 AI 开放 |
 
 `service_accounts` 模块混合了只读和凭据接口，如 AI 需要 §5.2–5.5 的数据，**工具清单不得包含 `/credentials`**。
 
 ---
 
-## 8. 建议调用顺序
+## 8.5 Taiji 平台 Push 入口（对外独立契约）
+
+`POST /api/metering/taiji/ingest` 供 Taiji AI 聚合平台回灌请求级日志（不是给 AI 大脑的读接口），独立 `X-API-Key` 鉴权、独立契约文档：
+
+📄 [taiji-ingest-api.md](./taiji-ingest-api.md)
+
+要点：
+- 批量上限 2000 条/次
+- 以 `id` 为幂等主键，重推自动去重
+- 处理后自动 upsert `billing_data` + `token_usage`，自动发现新 token 作为服务账号
+- `provider=taiji` 出现在所有 metering 查询结果中，AI 大脑无需额外处理
+
+---
+
+## 9. 建议调用顺序
 
 1. `GET /api/health` → 连通性探测
 2. `GET /api/auth/me` → 确认身份与可见范围
@@ -817,24 +1134,24 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 9. 各模块权限速查
+## 10. 各模块权限速查
 
 | 模块 | URL 前缀 | 所需角色 | 数据范围过滤 |
 |------|----------|----------|-------------|
-| `dashboard` | `/api/dashboard/*` | viewer / ops / finance | 按可见数据源 |
+| `dashboard` | `/api/dashboard/*` | viewer / ops / finance（含 admin） | 按可见数据源 |
 | `billing` | `/api/billing/*` | 任意登录 | 按可见数据源 |
 | `metering` | `/api/metering/*` | 任意登录 | 支持筛选参数 |
-| `bills` | `/api/bills/*` | `cloud_finance` | 无 |
-| `sync` | `/api/sync/*` | `cloud_ops` | 无 |
-| `cloud_accounts` | `/api/cloud-accounts/*` | 读=任意；写=`cloud_admin` | 按可见云账号 |
+| `bills` | `/api/bills/*` | `cloud_finance`（含 admin） | 无 |
+| `sync` | `/api/sync/*` | `cloud_ops`（含 admin） | 无 |
+| `cloud_accounts` | `/api/cloud-accounts/*` | 读=任意登录；写=`cloud_admin` | 按可见云账号 |
 | `resources` | `/api/resources/*` | 任意登录 | 按可见数据源 |
-| `projects` | `/api/projects/*` | 任意登录 | 无 |
-| `alerts` | `/api/alerts/*` | 任意登录 | 无 |
-| `categories` | `/api/categories/*` | 任意登录 | 无 |
-| `suppliers` | `/api/suppliers/*` | 任意登录 | 无 |
-| `exchange_rates` | `/api/exchange-rates/*` | 任意登录 | 无 |
-| `data_sources` | `/api/data-sources/*` | 任意登录 | 无 |
-| `service_accounts` | `/api/service-accounts/*` | **读=任意登录；写=`cloud_admin`** | 无 |
+| `projects` | `/api/projects/*` | 读=任意登录；写=`cloud_admin` | 无 |
+| `alerts` | `/api/alerts/*` | 读=任意登录；写告警规则=`cloud_ops` | 无 |
+| `categories` | `/api/categories/*` | **`cloud_admin`**（整个模块）| 无 |
+| `suppliers` | `/api/suppliers/*` | **`cloud_admin`**（整个模块）| 无 |
+| `exchange_rates` | `/api/exchange-rates/*` | 读=任意登录；写=`cloud_admin` / `cloud_finance` | 无 |
+| `data_sources` | `/api/data-sources/*` | **`cloud_admin`**（整个模块）| 无 |
+| `service_accounts` | `/api/service-accounts/*` | 读=任意登录；写=`cloud_admin` | 无 |
 | `azure_deploy` | `/api/azure-deploy/*` | `cloud_admin` | 无 |
 | `azure_consent` | `/api/azure-consent/*` | `cloud_admin` | 无 |
 
@@ -842,6 +1159,6 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 10. OpenAPI
+## 11. OpenAPI
 
 运行时通过 `GET /openapi.json` 或 `/docs` 获取与部署版本一致的 Schema（匿名可访问）。若本文与 OpenAPI 冲突，**以 OpenAPI 为准**。

@@ -117,12 +117,27 @@ def verify_casdoor_token(token: str) -> dict[str, Any]:
 
 
 def extract_roles(payload: dict[str, Any]) -> list[str]:
-    """Casdoor exposes roles under a few possible claims; normalize to list[str]."""
-    raw = payload.get("roles") or payload.get("role") or []
+    """
+    归一化 Casdoor token 里的 roles 为 list[str]。
+
+    读取顺序（任一命中即停）：
+      1. settings.CASDOOR_ROLES_CLAIM（默认 "roles"，可配置以适配 Keycloak 等非标 claim 名）
+      2. "roles"
+      3. "role"
+    """
+    from app.config import settings
+
+    custom_claim = (settings.CASDOOR_ROLES_CLAIM or "").strip()
+    raw = None
+    if custom_claim and custom_claim not in ("roles", "role"):
+        raw = payload.get(custom_claim)
+    if not raw:
+        raw = payload.get("roles") or payload.get("role") or []
+
     if isinstance(raw, str):
         return [raw]
     out: list[str] = []
-    for item in raw:
+    for item in raw or []:
         if isinstance(item, str):
             out.append(item)
         elif isinstance(item, dict):

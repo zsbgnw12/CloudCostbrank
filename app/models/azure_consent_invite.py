@@ -16,6 +16,11 @@ class AzureConsentInvite(Base):
     cloud_account_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("cloud_accounts.id"), nullable=True
     )
+    # 邀请创建时指定：consent 成功后自动把发现的订阅建成 Project 并挂到这个 SupplySource。
+    # 为 None 时 verify 只记录订阅到 secret_data，不自动建服务账号（向后兼容旧 invite）。
+    supply_source_id: Mapped[int | None] = mapped_column(
+        ForeignKey("supply_sources.id"), nullable=True
+    )
     created_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=True
     )

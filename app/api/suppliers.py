@@ -12,7 +12,11 @@ from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.services.default_supply_sources import RESERVED_UNASSIGNED_SUPPLIER_NAME
 
-router = APIRouter(dependencies=[Depends(require_roles("cloud_admin"))])
+# 权限约定：
+#   - 查看 / 创建 / 编辑：cloud_admin + cloud_ops（运营人员日常工作）
+#   - 删除：仅 cloud_admin（防止 ops 误删业务配置）
+# router 级默认放给 ops+admin；DELETE 端点单独加 require_roles("cloud_admin") 覆盖。
+router = APIRouter(dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))])
 
 
 class SupplierRead(BaseModel):
@@ -53,6 +57,11 @@ async def create_supplier(body: SupplierCreate, db: AsyncSession = Depends(get_d
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "名称不能为空")
+    dup = (await db.execute(
+        select(Supplier).where(Supplier.name == name).limit(1)
+    )).scalars().first()
+    if dup:
+        raise HTTPException(409, f"已存在同名供应商「{name}」(id={dup.id})")
     su = Supplier(name=name)
     db.add(su)
     await db.flush()
@@ -73,13 +82,23 @@ async def update_supplier(supplier_id: int, body: SupplierUpdate, db: AsyncSessi
         raise HTTPException(400, "系统保留供应商不可改名")
     if s.name != RESERVED_UNASSIGNED_SUPPLIER_NAME and name == RESERVED_UNASSIGNED_SUPPLIER_NAME:
         raise HTTPException(400, f"名称「{RESERVED_UNASSIGNED_SUPPLIER_NAME}」为系统保留")
+    if name != s.name:
+        dup = (await db.execute(
+            select(Supplier).where(Supplier.name == name, Supplier.id != supplier_id).limit(1)
+        )).scalars().first()
+        if dup:
+            raise HTTPException(409, f"已存在同名供应商「{name}」(id={dup.id})")
     s.name = name
     await db.commit()
     await db.refresh(s)
     return s
 
 
-@router.delete("/{supplier_id}", status_code=204)
+@router.delete(
+    "/{supplier_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def delete_supplier(supplier_id: int, db: AsyncSession = Depends(get_db)):
     s = await db.get(Supplier, supplier_id)
     if not s:
@@ -129,8 +148,8 @@ async def create_supply_source(supplier_id: int, body: SupplySourceCreate, db: A
     if not s:
         raise HTTPException(404, "供应商不存在")
     p = body.provider.strip().lower()
-    if p not in ("aws", "gcp", "azure"):
-        raise HTTPException(400, "provider 须为 aws / gcp / azure")
+    if p not in ("aws", "gcp", "azure", "taiji"):
+        raise HTTPException(400, "provider 须为 aws / gcp / azure / taiji")
     exists = (
         await db.execute(
             select(SupplySource).where(SupplySource.supplier_id == supplier_id, SupplySource.provider == p)
@@ -147,7 +166,11 @@ async def create_supply_source(supplier_id: int, body: SupplySourceCreate, db: A
     )
 
 
-@router.delete("/supply-sources/{supply_source_id}", status_code=204)
+@router.delete(
+    "/supply-sources/{supply_source_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
 async def delete_supply_source(
     supply_source_id: int,
     db: AsyncSession = Depends(get_db),

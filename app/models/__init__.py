@@ -15,6 +15,7 @@ from app.models.project_customer_assignment import ProjectCustomerAssignment
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.models.token_usage import TokenUsage
+from app.models.taiji_log_raw import TaijiLogRaw
 from app.models.user import User
 from app.models.user_grant import UserCloudAccountGrant, UserProjectGrant
 from app.models.api_module_permission import ApiModulePermission
@@ -41,6 +42,7 @@ __all__ = [
     "Supplier",
     "SupplySource",
     "TokenUsage",
+    "TaijiLogRaw",
     "User",
     "UserCloudAccountGrant",
     "UserProjectGrant",

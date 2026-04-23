@@ -29,6 +29,10 @@ from app.config import settings
 from app.database import get_db
 from app.models.azure_consent_invite import AzureConsentInvite
 from app.models.cloud_account import CloudAccount
+from app.models.data_source import DataSource
+from app.models.project import Project
+from app.models.project_assignment_log import ProjectAssignmentLog
+from app.models.supply_source import SupplySource
 from app.schemas.cloud_account import CloudAccountRead
 from app.services.audit_service import log_operation
 from app.services.crypto_service import decrypt_to_dict, encrypt_dict
@@ -43,6 +47,10 @@ callback_router = APIRouter()
 
 class ConsentStartRequest(BaseModel):
     account_name: str = Field(..., description="Display name for this customer")
+    supply_source_id: int | None = Field(
+        default=None,
+        description="绑定到的 SupplySource.id（provider 必须是 azure）；非空时 verify 成功将自动把发现的订阅建成服务账号挂到此货源下",
+    )
 
 
 class ConsentStartResponse(BaseModel):
@@ -134,6 +142,7 @@ def _invite_to_dict(inv: AzureConsentInvite) -> dict:
         "account_name": inv.account_name,
         "status": inv.status,
         "cloud_account_id": inv.cloud_account_id,
+        "supply_source_id": inv.supply_source_id,
         "created_by": inv.created_by,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
         "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
@@ -149,12 +158,24 @@ async def consent_start(body: ConsentStartRequest, db: AsyncSession = Depends(ge
     """Generate an invite with a unique state and return the admin-consent URL."""
     _require_global_app()
 
+    # 校验 supply_source_id 必须是 azure 类型（如果传了的话）
+    if body.supply_source_id is not None:
+        ss = await db.get(SupplySource, body.supply_source_id)
+        if not ss:
+            raise HTTPException(400, f"supply_source_id={body.supply_source_id} 不存在")
+        if ss.provider != "azure":
+            raise HTTPException(
+                400,
+                f"绑定的货源 #{ss.id} provider={ss.provider!r} 必须是 azure",
+            )
+
     state = secrets.token_urlsafe(32)
     invite = AzureConsentInvite(
         state=state,
         account_name=body.account_name,
         status="pending",
         expires_at=datetime.utcnow() + timedelta(hours=24),
+        supply_source_id=body.supply_source_id,
     )
     db.add(invite)
     await db.flush()
@@ -275,10 +296,72 @@ async def consent_verify(account_id: int, db: AsyncSession = Depends(get_db)):
         secret["subscription_ids"] = [s["subscription_id"] for s in subs]
         account.secret_data = encrypt_dict(secret)
     account.consent_status = "granted"
+
+    # 自动把发现的订阅建成 Project + DataSource，挂到邀请时绑定的 SupplySource 下。
+    # 需要 invite.supply_source_id 非空；否则只是保存订阅列表到 secret_data（向后兼容）。
+    created_project_ids: list[int] = []
+    auto_msg = ""
+    invite = (await db.execute(
+        select(AzureConsentInvite).where(AzureConsentInvite.cloud_account_id == account.id)
+    )).scalars().first()
+
+    if invite and invite.supply_source_id:
+        target_ss = await db.get(SupplySource, invite.supply_source_id)
+        if target_ss and target_ss.provider == "azure":
+            # 查当前 CloudAccount 下已存在的 Project.external_project_id 避免重复
+            existing = (await db.execute(
+                select(Project.external_project_id)
+                .join(DataSource, Project.data_source_id == DataSource.id)
+                .where(DataSource.cloud_account_id == account.id)
+            )).scalars().all()
+            existing_set = {str(x).strip() for x in existing}
+
+            for sub in subs:
+                sub_id = str(sub.get("subscription_id") or "").strip()
+                if not sub_id or sub_id in existing_set:
+                    continue
+                display_name = sub.get("display_name") or sub_id
+
+                ds = DataSource(
+                    name=f"azure-{sub_id}",
+                    cloud_account_id=account.id,
+                    config={
+                        "subscription_id": sub_id,
+                        "collect_mode": "subscription",
+                        "cost_metric": "ActualCost",
+                        "auto_created": True,
+                    },
+                    is_active=True,
+                )
+                db.add(ds)
+                await db.flush()
+
+                project = Project(
+                    name=display_name,
+                    external_project_id=sub_id,
+                    supply_source_id=target_ss.id,
+                    data_source_id=ds.id,
+                    status="standby",
+                )
+                db.add(project)
+                await db.flush()
+
+                db.add(ProjectAssignmentLog(
+                    project_id=project.id,
+                    action="created",
+                    from_status="",
+                    to_status="standby",
+                    notes=f"auto-imported from azure consent verify (CA#{account.id})",
+                ))
+                created_project_ids.append(project.id)
+
+            if created_project_ids:
+                auto_msg = f"，已自动创建 {len(created_project_ids)} 个服务账号"
+
     await db.commit()
     return VerifyResponse(
         ok=True,
-        message=f"验证成功，检测到 {len(subs)} 个订阅。",
+        message=f"验证成功，检测到 {len(subs)} 个订阅{auto_msg}。",
         discovered_subscriptions=subs,
     )
 
@@ -331,7 +414,9 @@ async def consent_callback(
     # 2. Customer denied or error
     if error or admin_consent != "True" or not tenant:
         invite.status = "failed"
-        invite.error_reason = error_description or error or "unknown"
+        # Microsoft 的 error_description 可能 280+ 字符，列宽 256，截断避免 DataError
+        raw_reason = error_description or error or "unknown"
+        invite.error_reason = raw_reason[:250]
         await db.commit()
         reason = error or "denied"
         return RedirectResponse(f"{frontend}/consent-fail?reason={reason}")

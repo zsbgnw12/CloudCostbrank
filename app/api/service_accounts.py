@@ -83,7 +83,7 @@ class ServiceAccountUpdate(BaseModel):
     notes: str | None = None
     order_method: str | None = None
     # 客户编号全量覆盖语义：None=不动；[]=清空；[...]=替换为该集合。
-    # 触发 _recompute_status（inactive 不动；非空→active；空→standby）。
+    # 不会影响账号 status（状态和客户编号已解耦；改 status 走 /suspend /activate /standby）。
     customer_codes: list[str] | None = None
 
     @field_validator("name", "external_project_id", mode="before")
@@ -281,24 +281,9 @@ async def _codes_by_project_ids(
     return out
 
 
-async def _recompute_status(db: AsyncSession, project: Project) -> tuple[str, str]:
-    """Status 规则派生：inactive 不动；有绑定 → active；无绑定 → standby。
-    返回 (old, new)；若没变则 old==new。调用方负责写 _log。
-    """
-    old = project.status
-    if old == "inactive":
-        return old, old
-    count = (
-        await db.execute(
-            select(func.count())
-            .select_from(ProjectCustomerAssignment)
-            .where(ProjectCustomerAssignment.project_id == project.id)
-        )
-    ).scalar() or 0
-    new = "active" if count > 0 else "standby"
-    if new != old:
-        project.status = new
-    return old, new
+# NOTE: 以前这里有 _recompute_status，根据 customer_codes 自动派生 status。
+# 现在 status 和客户编号彻底解耦：状态完全由人工点按钮决定（使用中/备用/停用），
+# 客户编号只是账号上的一个独立标签。所以派生函数已移除。
 
 
 def _principal_operator(request) -> str | None:
@@ -377,7 +362,7 @@ async def list_accounts(
     "/",
     response_model=ServiceAccountListItem,
     status_code=201,
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def create_account(body: ServiceAccountCreate, db: AsyncSession = Depends(get_db)):
     ss = await db.get(SupplySource, body.supply_source_id)
@@ -431,9 +416,16 @@ async def create_account(body: ServiceAccountCreate, db: AsyncSession = Depends(
 # ─── Delete (physical / hard delete) ─────────────────────────
 
 async def _hard_delete(account_id: int, db: AsyncSession):
-    """Permanently delete an account and cascade to CloudAccount + DataSource."""
+    """Permanently delete an account and cascade to CloudAccount + DataSource.
+
+    清理顺序：先把指向 data_source 的所有 NOT NULL 外键行删掉（billing、summary、
+    sync_logs、token_usage），再删 project，再删 data_source、cloud_account。
+    resource_inventory.data_source_id 是可空的，SQLAlchemy 会 SET NULL，不在这里处理。
+    """
     from sqlalchemy import delete as sql_delete
     from app.models.daily_summary import BillingDailySummary
+    from app.models.sync_log import SyncLog
+    from app.models.token_usage import TokenUsage
 
     project = await db.get(Project, account_id)
     if not project:
@@ -447,6 +439,12 @@ async def _hard_delete(account_id: int, db: AsyncSession):
         )
         await db.execute(
             sql_delete(BillingData).where(BillingData.data_source_id == ds_id)
+        )
+        await db.execute(
+            sql_delete(SyncLog).where(SyncLog.data_source_id == ds_id)
+        )
+        await db.execute(
+            sql_delete(TokenUsage).where(TokenUsage.data_source_id == ds_id)
         )
 
     await db.execute(
@@ -630,7 +628,7 @@ async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
 @router.put(
     "/{account_id}",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def update_account(
     account_id: int,
@@ -739,23 +737,129 @@ async def update_account(
                     customer_code=code, operator=operator,
                 )
             await db.flush()
-            await _recompute_status(db, project)
+            # status 不再随客户编号派生，保持当前值
 
     await db.commit()
     return await get_account(account_id, db)
 
 
+# ─── Bulk reassign to another SupplySource ───────────────────
+
+class BulkAssignRequest(BaseModel):
+    account_ids: list[int]
+    target_supply_source_id: int
+
+    @field_validator("account_ids")
+    @classmethod
+    def _non_empty(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("account_ids 不能为空")
+        # 去重，避免同 id 被处理两次
+        return list(dict.fromkeys(v))
+
+
+class BulkAssignSkip(BaseModel):
+    account_id: int
+    reason: str
+
+
+class BulkAssignResponse(BaseModel):
+    moved: int
+    skipped: list[BulkAssignSkip]
+    target_supply_source_id: int
+    target_provider: str
+    target_supplier_name: str
+
+
+@router.post(
+    "/bulk-assign",
+    response_model=BulkAssignResponse,
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+)
+async def bulk_assign(body: BulkAssignRequest, db: AsyncSession = Depends(get_db)):
+    """
+    批量把服务账号迁到另一个货源（SupplySource）下。
+
+    规则：
+      - 跨 provider **禁止**（aws 账号不能挂到 gcp 货源下），触发即跳过
+      - 已经在目标货源下的账号跳过
+      - 每条迁移写一条 ProjectAssignmentLog (action=reassigned)
+      - 整体事务：任一成功则一起 commit；中途异常整批回滚
+    """
+    # 1. 加载目标货源 + 供应商信息
+    target_ss = (await db.execute(
+        select(SupplySource, Supplier)
+        .join(Supplier, SupplySource.supplier_id == Supplier.id)
+        .where(SupplySource.id == body.target_supply_source_id)
+    )).first()
+    if not target_ss:
+        raise HTTPException(404, f"目标货源 id={body.target_supply_source_id} 不存在")
+    target_ss_obj, target_supplier = target_ss
+    target_provider = target_ss_obj.provider
+
+    # 2. 批量加载 Project + 现有 SS
+    rows = (await db.execute(
+        select(Project, SupplySource)
+        .join(SupplySource, Project.supply_source_id == SupplySource.id)
+        .where(Project.id.in_(body.account_ids))
+    )).all()
+    found_map = {p.id: (p, ss) for p, ss in rows}
+
+    moved = 0
+    skipped: list[BulkAssignSkip] = []
+
+    for acc_id in body.account_ids:
+        hit = found_map.get(acc_id)
+        if not hit:
+            skipped.append(BulkAssignSkip(account_id=acc_id, reason="不存在"))
+            continue
+        project, current_ss = hit
+
+        if project.supply_source_id == target_ss_obj.id:
+            skipped.append(BulkAssignSkip(account_id=acc_id, reason="已在目标货源下"))
+            continue
+
+        if current_ss.provider != target_provider:
+            skipped.append(BulkAssignSkip(
+                account_id=acc_id,
+                reason=f"跨 provider 禁止（账号 {current_ss.provider} → 目标 {target_provider}）",
+            ))
+            continue
+
+        old_ss_id = project.supply_source_id
+        project.supply_source_id = target_ss_obj.id
+        _log(
+            db, project,
+            action="reassigned",
+            from_status=f"ss#{old_ss_id}",
+            to_status=f"ss#{target_ss_obj.id}",
+            notes=f"bulk_assign → 供应商 '{target_supplier.name}' / {target_provider}",
+        )
+        moved += 1
+
+    await db.commit()
+
+    return BulkAssignResponse(
+        moved=moved,
+        skipped=skipped,
+        target_supply_source_id=target_ss_obj.id,
+        target_provider=target_provider,
+        target_supplier_name=target_supplier.name,
+    )
+
+
 @router.post(
     "/{account_id}/suspend",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def suspend_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """人工停用。允许从使用中 / 备用切到停用。"""
     project = await db.get(Project, account_id)
     if not project:
         raise HTTPException(404, "Service account not found")
-    if project.status not in ("active", "standby"):
-        raise HTTPException(400, f"Cannot suspend in '{project.status}' state")
+    if project.status == "inactive":
+        return await get_account(account_id, db)
 
     old_status = project.status
     project.status = "inactive"
@@ -772,25 +876,45 @@ async def suspend_account(account_id: int, request: Request, db: AsyncSession = 
 @router.post(
     "/{account_id}/activate",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def activate_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    """恢复启用。恢复后由规则派生最终 status：有客户绑定→active；否则→standby。"""
+    """人工置为使用中。允许从备用 / 停用切到使用中。和客户编号无关。"""
     project = await db.get(Project, account_id)
     if not project:
         raise HTTPException(404, "Service account not found")
-    if project.status not in ("inactive", "standby"):
-        raise HTTPException(400, f"Cannot activate in '{project.status}' state")
+    if project.status == "active":
+        return await get_account(account_id, db)
 
     old_status = project.status
-    # Leave 'inactive' → recompute will set active or standby based on bindings.
-    if old_status == "inactive":
-        project.status = "standby"
-        await db.flush()
-    old, new = await _recompute_status(db, project)
+    project.status = "active"
     _log(
         db, project, "activated",
-        from_status=old_status, to_status=project.status,
+        from_status=old_status, to_status="active",
+        operator=_principal_operator(request),
+    )
+    await db.commit()
+    return await get_account(account_id, db)
+
+
+@router.post(
+    "/{account_id}/standby",
+    response_model=ServiceAccountDetail,
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+)
+async def standby_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """人工置为备用。允许从使用中 / 停用切到备用。和客户编号无关。"""
+    project = await db.get(Project, account_id)
+    if not project:
+        raise HTTPException(404, "Service account not found")
+    if project.status == "standby":
+        return await get_account(account_id, db)
+
+    old_status = project.status
+    project.status = "standby"
+    _log(
+        db, project, "standby",
+        from_status=old_status, to_status="standby",
         operator=_principal_operator(request),
     )
     await db.commit()
@@ -802,7 +926,7 @@ async def activate_account(account_id: int, request: Request, db: AsyncSession =
 @router.post(
     "/customer-assignments/sync",
     response_model=SalesSyncResult,
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def sync_customer_assignments(
     body: SalesSyncBody,
@@ -954,7 +1078,7 @@ async def sync_customer_assignments(
             )
 
         await db.flush()
-        await _recompute_status(db, proj)
+        # status 不再随客户编号派生，保持当前值
 
     await db.commit()
     return SalesSyncResult(
@@ -1049,7 +1173,7 @@ async def get_costs(
 
 @router.get(
     "/{account_id}/credentials",
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def get_credentials(account_id: int, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, account_id)
@@ -1241,7 +1365,7 @@ def _build_excel(
 
 @router.post(
     "/discover-gcp-projects",
-    dependencies=[Depends(require_roles("cloud_admin"))],
+    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def discover_gcp_projects(db: AsyncSession = Depends(get_db)):
     """为账单中存在但未建档的 GCP project 创建 Project，挂在系统供应商「未分配资源组」的 GCP 货源下。"""

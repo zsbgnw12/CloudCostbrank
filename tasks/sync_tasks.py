@@ -14,6 +14,8 @@ from app.services.sync_service import (
     upsert_billing_rows,
     refresh_daily_summary,
     auto_create_gcp_projects,
+    auto_create_taiji_projects,
+    upsert_token_usage_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,20 @@ def sync_data_source(self, data_source_id: int, start_month: str, end_month: str
             except Exception as e:
                 logger.warning("Failed to auto-create GCP projects: %s", e)
 
+        if provider == "taiji":
+            try:
+                created = auto_create_taiji_projects(rows, data_source_id=data_source_id)
+                if created:
+                    logger.info("Auto-created %d new Taiji token project(s)", created)
+            except Exception as e:
+                logger.warning("Failed to auto-create taiji projects: %s", e)
+            try:
+                tu_count = upsert_token_usage_rows(rows, provider=provider, data_source_id=data_source_id)
+                if tu_count:
+                    logger.info("Upserted %d token_usage rows for taiji ds=%d", tu_count, data_source_id)
+            except Exception as e:
+                logger.warning("Failed to upsert token_usage for taiji: %s", e)
+
         try:
             refresh_daily_summary(start_date, end_date)
         except Exception as e:
@@ -126,6 +142,14 @@ def check_alerts():
     """Run alert checks."""
     from app.services.alert_service import check_all_alerts
     check_all_alerts()
+
+
+@celery_app.task
+def gc_taiji_raw_logs():
+    """每日清理 30 天前的 taiji 原始请求日志；天级聚合（billing_data / token_usage）不动。"""
+    from app.services.sync_service import gc_taiji_raw_older_than
+    deleted = gc_taiji_raw_older_than(days=30)
+    return {"deleted": deleted}
 
 
 @celery_app.task

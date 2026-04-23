@@ -238,17 +238,37 @@
 
 ## Metering（前缀 `/api/metering`）
 
-基于 `billing_data` 的用量与费用聚合；可选作用域：`account_id`、`supply_source_id`、`supplier_name`（`"(未分组)"` 表示供应商名为「未分组」）、`data_source_id`（与 `app/api/metering.py` 中 `_metering_scope` 一致）。
+基于 `billing_data` 的用量与费用聚合。
+
+**provider 枚举**：`aws` / `gcp` / `azure` / `taiji`。
+
+**作用域参数**（传哪个就按哪个过滤，传多个时按 `account_ids > account_id > supply_source_id > supplier_name` 优先级，详见 `app/api/metering.py` 中 `_metering_scope`）：
+
+| 参数 | 说明 |
+|---|---|
+| `account_id` | 单个服务账号 ID（`projects.id`，旧，保留兼容）|
+| `account_ids` | 多个服务账号 ID（v1.1 新增，推荐；重复 query: `account_ids=1&account_ids=2`） |
+| `supply_source_id` | 货源 ID |
+| `supplier_name` | 供应商名；`"(未分组)"` 会映射到保留名 "未分组" |
+| `data_source_id` | 数据源 ID |
+
+**其他筛选**：
+
+| 参数 | 说明 |
+|---|---|
+| `product` | 单个服务/模型名（旧，兼容）|
+| `products` | 多个服务/模型名（v1.1 新增；重复 query：`products=gpt-4o&products=claude`）|
 
 | 方法 | 路径 | 查询参数 |
 |------|------|----------|
-| GET | `/summary` | 日期区间、`provider`、`product`，及上述作用域参数 |
+| GET | `/summary` | 日期区间、`provider`、`product/products`，及上述作用域参数 |
 | GET | `/daily` | 同上 |
-| GET | `/by-service` | 同上（无 `product` 筛选） |
+| GET | `/by-service` | 同上（自身就是按 product 聚合，但也支持 `products` 收窄）|
 | GET | `/products` | `provider` 与作用域 |
 | GET | `/detail` | 同上 + `page`，`page_size` |
 | GET | `/detail/count` | 返回 `{"total"}` |
 | GET | `/export` | 流式 CSV，`metering_billing_export.csv` |
+| **POST** | **`/taiji/ingest`** | **v1.1 新增** — Taiji 平台 Push 原始请求日志入口，`X-API-Key` 鉴权；详见 [taiji-ingest-api.md](./taiji-ingest-api.md) |
 
 ---
 

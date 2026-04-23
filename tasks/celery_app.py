@@ -38,6 +38,10 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.sync_tasks.generate_monthly_bills_previous",
         "schedule": crontab(day_of_month=2, hour=5, minute=0),
     },
+    "daily-taiji-raw-gc": {
+        "task": "tasks.sync_tasks.gc_taiji_raw_logs",
+        "schedule": crontab(hour=4, minute=0),
+    },
 }
 
 # Auto-discover tasks
