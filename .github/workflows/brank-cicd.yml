@@ -43,9 +43,12 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Update Container App
+      - name: Update Container App (all containers)
         run: |
-          az containerapp update \
-            --name "$CONTAINER_APP" \
-            --resource-group "$RESOURCE_GROUP" \
-            --image "$IMAGE"
+          for C in api celery-worker celery-beat; do
+            az containerapp update \
+              --name "$CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --container-name "$C" \
+              --image "$IMAGE"
+          done
