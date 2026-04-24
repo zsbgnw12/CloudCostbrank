@@ -65,6 +65,7 @@ async def list_projects(
         select(Project, SupplySource, Supplier)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
+        .where(Project.recycled_at.is_(None))
         .order_by(Project.id)
     )
     if status:
@@ -107,7 +108,7 @@ async def get_project(
         select(Project, SupplySource, Supplier)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
-        .where(Project.id == project_id)
+        .where(Project.id == project_id, Project.recycled_at.is_(None))
     )
     t = row.first()
     if not t:
@@ -124,7 +125,7 @@ async def update_project(
     _: Principal = Depends(require_roles("cloud_admin")),
 ):
     project = await db.get(Project, project_id)
-    if not project:
+    if not project or project.recycled_at is not None:
         raise HTTPException(404, "Project not found")
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(project, k, v)
@@ -147,7 +148,7 @@ async def activate_project(
     _: Principal = Depends(require_roles("cloud_admin")),
 ):
     project = await db.get(Project, project_id)
-    if not project:
+    if not project or project.recycled_at is not None:
         raise HTTPException(404, "Project not found")
     allowed_from, to_state = STATE_MACHINE["activate"]
     if project.status not in allowed_from:
@@ -166,7 +167,7 @@ async def suspend_project(
     _: Principal = Depends(require_roles("cloud_admin")),
 ):
     project = await db.get(Project, project_id)
-    if not project:
+    if not project or project.recycled_at is not None:
         raise HTTPException(404, "Project not found")
     allowed_from, to_state = STATE_MACHINE["suspend"]
     if project.status not in allowed_from:
@@ -185,7 +186,7 @@ async def assignment_logs(
     _: Principal = Depends(get_current_principal),
 ):
     project = await db.get(Project, project_id)
-    if not project:
+    if not project or project.recycled_at is not None:
         raise HTTPException(404, "Project not found")
     r = await db.execute(
         select(ProjectAssignmentLog)

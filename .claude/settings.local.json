@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(az account *)",
+      "Bash(az group *)",
+      "Bash(az containerapp *)",
+      "Bash(az acr *)",
+      "Bash(az ad *)",
+      "Bash(az role *)",
+      "Bash(export MSYS_NO_PATHCONV=1)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh run *)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run list --workflow brank-cicd.yml --limit 3 --repo zsbgnw12/CloudCostbrank)",
+      "Bash(where gh *)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/陈晨/AppData/Local/**)",
+      "Bash(git ls-tree *)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  time=%{time_total}s\\\\n\" https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io/)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  time=%{time_total}s\\\\n\" https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io/docs)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  time=%{time_total}s\\\\n\" https://cloudcost-brank.yellowground-bf760827.southeastasia.azurecontainerapps.io/health)",
+      "Bash(git fetch *)"
+    ]
+  }
+}

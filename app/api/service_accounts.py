@@ -325,6 +325,7 @@ async def list_accounts(
         )
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
+        .where(Project.recycled_at.is_(None))
         .order_by(SupplySource.provider, Supplier.name, Project.name)
     )
     if provider:
@@ -415,62 +416,50 @@ async def create_account(body: ServiceAccountCreate, db: AsyncSession = Depends(
 
 # ─── Delete (physical / hard delete) ─────────────────────────
 
-async def _hard_delete(account_id: int, db: AsyncSession):
-    """Permanently delete an account and cascade to CloudAccount + DataSource.
+async def _get_active_project(db: AsyncSession, account_id: int) -> Project:
+    """db.get(Project, id)，但若 project 不存在或已软删（recycled_at 非空）则 404。
 
-    清理顺序：先把指向 data_source 的所有 NOT NULL 外键行删掉（billing、summary、
-    sync_logs、token_usage），再删 project，再删 data_source、cloud_account。
-    resource_inventory.data_source_id 是可空的，SQLAlchemy 会 SET NULL，不在这里处理。
+    面向用户的所有 CRUD 端点（详情、suspend/activate/standby、状态编辑、成本报表等）
+    都应该走这个，避免操作已被删除的账号。内部审计流程如需访问回收站内容，直接用 db.get。
     """
-    from sqlalchemy import delete as sql_delete
-    from app.models.daily_summary import BillingDailySummary
-    from app.models.sync_log import SyncLog
-    from app.models.token_usage import TokenUsage
+    project = await db.get(Project, account_id)
+    if not project or project.recycled_at is not None:
+        raise HTTPException(404, "Service account not found")
+    return project
 
+
+async def _hard_delete(account_id: int, db: AsyncSession):
+    """Soft-delete：只打 recycled_at 时间戳，前端永不再显示；billing/sync 历史一律保留。
+
+    以前这里是 cascade 物理删 billing_data / summary / sync_logs / token_usage / ds / ca，
+    问题有三：
+      1. auto_create_gcp_projects 下次 sync 发现 BQ 里还有这个 project_id 就会原名复活（status=standby），
+         用户点了删除，第二天又冒出来，看起来像"删不掉"；
+      2. 共享 data_source 的场景（比如 ds#4 下挂 47 个项目）一旦误删会连带清空其他项目的账单；
+      3. 账单数据、审计日志一并消失，事后无法回溯。
+    现在改为软删：
+      - Project.recycled_at = NOW()
+      - status 顺带置 "inactive"（给审计日志用）
+      - list_accounts 会过滤掉 recycled_at 非空的行
+      - auto_create_gcp_projects 本来就用 external_project_id 判重（跨状态），软删后再次
+        sync 到同 project_id 也会被视为"已存在"→ 不会复活
+      - 一切 billing / ds / ca / sync_log 原封不动
+    若需要真的物理清除某账号所有数据，请运维直连 DB 手工处理（留痕）。
+    """
     project = await db.get(Project, account_id)
     if not project:
         raise HTTPException(404, "Service account not found")
+    if project.recycled_at is not None:
+        return  # idempotent: already soft-deleted, second click is a no-op
 
-    ds_id = project.data_source_id
+    old_status = project.status
+    project.recycled_at = dt.datetime.utcnow()
+    project.status = "inactive"
 
-    if ds_id:
-        await db.execute(
-            sql_delete(BillingDailySummary).where(BillingDailySummary.data_source_id == ds_id)
-        )
-        await db.execute(
-            sql_delete(BillingData).where(BillingData.data_source_id == ds_id)
-        )
-        await db.execute(
-            sql_delete(SyncLog).where(SyncLog.data_source_id == ds_id)
-        )
-        await db.execute(
-            sql_delete(TokenUsage).where(TokenUsage.data_source_id == ds_id)
-        )
-
-    await db.execute(
-        sql_delete(ProjectAssignmentLog).where(ProjectAssignmentLog.project_id == account_id)
+    _log(
+        db, project, "deleted",
+        from_status=old_status, to_status="inactive",
     )
-
-    await db.delete(project)
-    await db.flush()
-
-    if ds_id:
-        ds = await db.get(DataSource, ds_id)
-        if ds:
-            ca_id = ds.cloud_account_id
-            await db.delete(ds)
-            await db.flush()
-            if ca_id:
-                other_ds = await db.execute(
-                    select(func.count()).select_from(DataSource)
-                    .where(DataSource.cloud_account_id == ca_id)
-                )
-                if (other_ds.scalar() or 0) == 0:
-                    ca = await db.get(CloudAccount, ca_id)
-                    if ca:
-                        await db.delete(ca)
-                        await db.flush()
-
     await db.commit()
 
 
@@ -579,7 +568,7 @@ async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
         .outerjoin(DataSource, Project.data_source_id == DataSource.id)
         .outerjoin(CloudAccount, DataSource.cloud_account_id == CloudAccount.id)
-        .where(Project.id == account_id)
+        .where(Project.id == account_id, Project.recycled_at.is_(None))
     )).first()
     if not row:
         raise HTTPException(404, "Service account not found")
@@ -636,9 +625,7 @@ async def update_account(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
 
     data = body.model_dump(exclude_unset=True)
     secret_data = data.pop("secret_data", None)
@@ -855,9 +842,7 @@ async def bulk_assign(body: BulkAssignRequest, db: AsyncSession = Depends(get_db
 )
 async def suspend_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """人工停用。允许从使用中 / 备用切到停用。"""
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
     if project.status == "inactive":
         return await get_account(account_id, db)
 
@@ -880,9 +865,7 @@ async def suspend_account(account_id: int, request: Request, db: AsyncSession = 
 )
 async def activate_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """人工置为使用中。允许从备用 / 停用切到使用中。和客户编号无关。"""
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
     if project.status == "active":
         return await get_account(account_id, db)
 
@@ -904,9 +887,7 @@ async def activate_account(account_id: int, request: Request, db: AsyncSession =
 )
 async def standby_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """人工置为备用。允许从使用中 / 停用切到备用。和客户编号无关。"""
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
     if project.status == "standby":
         return await get_account(account_id, db)
 
@@ -1102,9 +1083,7 @@ async def get_costs(
     end_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     db: AsyncSession = Depends(get_db),
 ):
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
 
     prov = await _cloud_provider(db, project)
     sd = dt.date.fromisoformat(start_date)
@@ -1176,9 +1155,7 @@ async def get_costs(
     dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
 async def get_credentials(account_id: int, db: AsyncSession = Depends(get_db)):
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
     if not project.data_source_id:
         return {}
     ds = await db.get(DataSource, project.data_source_id)
@@ -1206,9 +1183,7 @@ async def export_account_costs(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    project = await db.get(Project, account_id)
-    if not project:
-        raise HTTPException(404, "Service account not found")
+    project = await _get_active_project(db, account_id)
 
     prov = await _cloud_provider(db, project)
     sd = dt.date.fromisoformat(start_date)
