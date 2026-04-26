@@ -114,8 +114,13 @@ def _escape_copy_value(val) -> str:
 
 _BILLING_COLUMNS = [
     "date", "provider", "data_source_id", "project_id", "project_name",
-    "product", "usage_type", "region", "cost", "usage_quantity",
-    "usage_unit", "currency", "tags", "additional_info",
+    "service_id", "sku_id",
+    "product", "usage_type", "region",
+    "cost", "cost_at_list", "credits_total",
+    "usage_quantity",
+    "usage_unit", "currency",
+    "resource_name", "cost_type",
+    "tags", "additional_info",
 ]
 
 
@@ -142,9 +147,13 @@ def upsert_billing_rows(rows: list[dict]):
                 CREATE TEMP TABLE _billing_staging (
                     date DATE, provider VARCHAR(10), data_source_id INTEGER,
                     project_id VARCHAR(200), project_name VARCHAR(200),
+                    service_id VARCHAR(40), sku_id VARCHAR(40),
                     product VARCHAR(200), usage_type VARCHAR(300), region VARCHAR(50),
-                    cost DECIMAL(20,6), usage_quantity DECIMAL(20,6),
+                    cost DECIMAL(20,6),
+                    cost_at_list DECIMAL(20,6), credits_total DECIMAL(20,6),
+                    usage_quantity DECIMAL(20,6),
                     usage_unit VARCHAR(50), currency VARCHAR(10),
+                    resource_name VARCHAR(500), cost_type VARCHAR(20),
                     tags JSONB, additional_info JSONB
                 ) ON COMMIT DROP
             """)
@@ -158,16 +167,26 @@ def upsert_billing_rows(rows: list[dict]):
             # Aggregate by unique key before insert: SUM cost / usage_quantity so
             # multiple line-items sharing the same dedup key (common in GCP BQ and
             # Azure Cost Details CSV exports) are summed, not overwritten.
+            # GROUP BY 仍按原 unique key (date, ds, project_id, product, usage_type, region)。
+            # 新增字段 service_id/sku_id/resource_name/cost_type 用 MAX 聚合（同一组里
+            # 通常只有一个值，多值时取字典序最大；细维度想保留就回 BQ 查）。
+            # cost_at_list / credits_total 用 SUM 累加（NULL 行被自动忽略）。
             cur.execute(f"""
                 INSERT INTO billing_data ({cols_str})
                 SELECT
                     date, provider, data_source_id, project_id,
                     MAX(project_name) AS project_name,
+                    MAX(service_id) AS service_id,
+                    MAX(sku_id) AS sku_id,
                     product, usage_type, region,
                     SUM(cost) AS cost,
+                    SUM(cost_at_list) AS cost_at_list,
+                    SUM(credits_total) AS credits_total,
                     SUM(usage_quantity) AS usage_quantity,
                     MAX(usage_unit) AS usage_unit,
                     MAX(currency) AS currency,
+                    MAX(resource_name) AS resource_name,
+                    MAX(cost_type) AS cost_type,
                     (ARRAY_AGG(tags ORDER BY cost DESC))[1] AS tags,
                     (ARRAY_AGG(additional_info ORDER BY cost DESC))[1] AS additional_info
                 FROM _billing_staging
@@ -175,9 +194,15 @@ def upsert_billing_rows(rows: list[dict]):
                 ON CONFLICT (date, data_source_id, project_id, product, usage_type, region)
                 DO UPDATE SET
                     cost = EXCLUDED.cost,
+                    cost_at_list = EXCLUDED.cost_at_list,
+                    credits_total = EXCLUDED.credits_total,
                     usage_quantity = EXCLUDED.usage_quantity,
                     project_name = EXCLUDED.project_name,
+                    service_id = EXCLUDED.service_id,
+                    sku_id = EXCLUDED.sku_id,
                     currency = EXCLUDED.currency,
+                    resource_name = EXCLUDED.resource_name,
+                    cost_type = EXCLUDED.cost_type,
                     tags = EXCLUDED.tags,
                     additional_info = EXCLUDED.additional_info
             """)
@@ -199,10 +224,15 @@ def refresh_daily_summary(start_date: str, end_date: str):
         conn.execute(text("""
             INSERT INTO billing_daily_summary
                 (date, provider, data_source_id, project_id, product,
-                 total_cost, total_usage, record_count)
+                 total_cost, total_cost_at_list, total_credits,
+                 total_usage, record_count)
             SELECT
                 date, provider, data_source_id, project_id, product,
-                SUM(cost), SUM(usage_quantity), COUNT(*)
+                SUM(cost),
+                SUM(cost_at_list),
+                SUM(credits_total),
+                SUM(usage_quantity),
+                COUNT(*)
             FROM billing_data
             WHERE date >= :sd AND date <= :ed
             GROUP BY date, provider, data_source_id, project_id, product

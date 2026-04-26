@@ -25,6 +25,10 @@ class BillingDailySummary(Base):
     project_id: Mapped[str | None] = mapped_column(String(200))
     product: Mapped[str | None] = mapped_column(String(200))
     total_cost: Mapped[Decimal] = mapped_column(DECIMAL(20, 6), nullable=False, default=Decimal("0"))
+    # 标价合计与折扣合计；refresh_daily_summary 直接 SUM 自 billing_data。
+    # 老数据这两列是 NULL；新 sync 之后会被填上。dashboard 读时用 COALESCE 兜底。
+    total_cost_at_list: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    total_credits: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     total_usage: Mapped[Decimal] = mapped_column(DECIMAL(20, 6), default=Decimal("0"))
     record_count: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
