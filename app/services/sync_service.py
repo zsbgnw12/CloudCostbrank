@@ -116,12 +116,16 @@ _BILLING_COLUMNS = [
     "date", "provider", "data_source_id", "project_id", "project_name",
     "service_id", "sku_id",
     "product", "usage_type", "region",
+    "cost_type",
     "cost", "cost_at_list",
-    "credits_total", "credits_committed", "credits_other",
+    "credits_total", "credits_breakdown",
     "usage_quantity",
-    "usage_unit", "currency",
-    "resource_name", "cost_type",
-    "tags", "additional_info",
+    "usage_unit", "currency", "currency_conversion_rate",
+    "resource_name",
+    "billing_account_id", "invoice_month",
+    "transaction_type", "seller_name",
+    "consumption_model_id", "consumption_model_description",
+    "tags", "system_labels", "additional_info",
 ]
 
 
@@ -150,14 +154,22 @@ def upsert_billing_rows(rows: list[dict]):
                     project_id VARCHAR(200), project_name VARCHAR(200),
                     service_id VARCHAR(40), sku_id VARCHAR(40),
                     product VARCHAR(200), usage_type VARCHAR(300), region VARCHAR(50),
+                    cost_type VARCHAR(20),
                     cost DECIMAL(20,6),
                     cost_at_list DECIMAL(20,6),
                     credits_total DECIMAL(20,6),
-                    credits_committed DECIMAL(20,6), credits_other DECIMAL(20,6),
+                    credits_breakdown JSONB,
                     usage_quantity DECIMAL(20,6),
                     usage_unit VARCHAR(50), currency VARCHAR(10),
-                    resource_name VARCHAR(500), cost_type VARCHAR(20),
-                    tags JSONB, additional_info JSONB
+                    currency_conversion_rate NUMERIC(20,10),
+                    resource_name VARCHAR(500),
+                    billing_account_id VARCHAR(40),
+                    invoice_month VARCHAR(7),
+                    transaction_type VARCHAR(40),
+                    seller_name VARCHAR(200),
+                    consumption_model_id VARCHAR(40),
+                    consumption_model_description VARCHAR(200),
+                    tags JSONB, system_labels JSONB, additional_info JSONB
                 ) ON COMMIT DROP
             """)
 
@@ -174,6 +186,8 @@ def upsert_billing_rows(rows: list[dict]):
             # 新增字段 service_id/sku_id/resource_name/cost_type 用 MAX 聚合（同一组里
             # 通常只有一个值，多值时取字典序最大；细维度想保留就回 BQ 查）。
             # cost_at_list / credits_total 用 SUM 累加（NULL 行被自动忽略）。
+            # GROUP BY 加上 cost_type，对齐 019 后的 unique 约束 (含 cost_type)。
+            # ON CONFLICT 也加 cost_type。这样 regular/tax/adjustment 各自独立行，不再被混算。
             cur.execute(f"""
                 INSERT INTO billing_data ({cols_str})
                 SELECT
@@ -182,35 +196,48 @@ def upsert_billing_rows(rows: list[dict]):
                     MAX(service_id) AS service_id,
                     MAX(sku_id) AS sku_id,
                     product, usage_type, region,
+                    cost_type,
                     SUM(cost) AS cost,
                     SUM(cost_at_list) AS cost_at_list,
                     SUM(credits_total) AS credits_total,
-                    SUM(credits_committed) AS credits_committed,
-                    SUM(credits_other) AS credits_other,
+                    (ARRAY_AGG(credits_breakdown ORDER BY cost DESC NULLS LAST))[1] AS credits_breakdown,
                     SUM(usage_quantity) AS usage_quantity,
                     MAX(usage_unit) AS usage_unit,
                     MAX(currency) AS currency,
+                    MAX(currency_conversion_rate) AS currency_conversion_rate,
                     MAX(resource_name) AS resource_name,
-                    MAX(cost_type) AS cost_type,
+                    MAX(billing_account_id) AS billing_account_id,
+                    MAX(invoice_month) AS invoice_month,
+                    MAX(transaction_type) AS transaction_type,
+                    MAX(seller_name) AS seller_name,
+                    MAX(consumption_model_id) AS consumption_model_id,
+                    MAX(consumption_model_description) AS consumption_model_description,
                     (ARRAY_AGG(tags ORDER BY cost DESC))[1] AS tags,
+                    (ARRAY_AGG(system_labels ORDER BY cost DESC NULLS LAST))[1] AS system_labels,
                     (ARRAY_AGG(additional_info ORDER BY cost DESC))[1] AS additional_info
                 FROM _billing_staging
-                GROUP BY date, provider, data_source_id, project_id, product, usage_type, region
-                ON CONFLICT (date, data_source_id, project_id, product, usage_type, region)
+                GROUP BY date, provider, data_source_id, project_id, product, usage_type, region, cost_type
+                ON CONFLICT (date, data_source_id, project_id, product, usage_type, region, cost_type)
                 DO UPDATE SET
                     cost = EXCLUDED.cost,
                     cost_at_list = EXCLUDED.cost_at_list,
                     credits_total = EXCLUDED.credits_total,
-                    credits_committed = EXCLUDED.credits_committed,
-                    credits_other = EXCLUDED.credits_other,
+                    credits_breakdown = EXCLUDED.credits_breakdown,
                     usage_quantity = EXCLUDED.usage_quantity,
                     project_name = EXCLUDED.project_name,
                     service_id = EXCLUDED.service_id,
                     sku_id = EXCLUDED.sku_id,
                     currency = EXCLUDED.currency,
+                    currency_conversion_rate = EXCLUDED.currency_conversion_rate,
                     resource_name = EXCLUDED.resource_name,
-                    cost_type = EXCLUDED.cost_type,
+                    billing_account_id = EXCLUDED.billing_account_id,
+                    invoice_month = EXCLUDED.invoice_month,
+                    transaction_type = EXCLUDED.transaction_type,
+                    seller_name = EXCLUDED.seller_name,
+                    consumption_model_id = EXCLUDED.consumption_model_id,
+                    consumption_model_description = EXCLUDED.consumption_model_description,
                     tags = EXCLUDED.tags,
+                    system_labels = EXCLUDED.system_labels,
                     additional_info = EXCLUDED.additional_info
             """)
 
@@ -231,16 +258,13 @@ def refresh_daily_summary(start_date: str, end_date: str):
         conn.execute(text("""
             INSERT INTO billing_daily_summary
                 (date, provider, data_source_id, project_id, product,
-                 total_cost, total_cost_at_list,
-                 total_credits, total_credits_committed, total_credits_other,
+                 total_cost, total_cost_at_list, total_credits,
                  total_usage, record_count)
             SELECT
                 date, provider, data_source_id, project_id, product,
                 SUM(cost),
                 SUM(cost_at_list),
                 SUM(credits_total),
-                SUM(credits_committed),
-                SUM(credits_other),
                 SUM(usage_quantity),
                 COUNT(*)
             FROM billing_data

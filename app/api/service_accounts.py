@@ -484,8 +484,6 @@ class AccountDailyCostRow(BaseModel):
     service_id: str | None = None
     cost: float
     cost_at_list: float | None = None
-    credits_committed: float | None = None
-    credits_other: float | None = None
     credits_total: float | None = None
     currency: str | None = None
 
@@ -511,8 +509,6 @@ async def daily_report(
             func.max(BillingData.service_id).label("service_id"),
             func.sum(BillingData.cost).label("cost"),
             func.sum(BillingData.cost_at_list).label("cost_at_list"),
-            func.sum(BillingData.credits_committed).label("credits_committed"),
-            func.sum(BillingData.credits_other).label("credits_other"),
             func.sum(BillingData.credits_total).label("credits_total"),
             func.max(BillingData.currency).label("currency"),
         )
@@ -555,8 +551,6 @@ async def daily_report(
             service_id=r.service_id,
             cost=float(r.cost) if r.cost is not None else 0.0,
             cost_at_list=_f(r.cost_at_list),
-            credits_committed=_f(r.credits_committed),
-            credits_other=_f(r.credits_other),
             credits_total=_f(r.credits_total),
             currency=r.currency,
         )
@@ -1224,10 +1218,9 @@ async def export_account_costs(
             BillingData.usage_unit,
             BillingData.cost,
             BillingData.cost_at_list,
-            BillingData.credits_committed,
-            BillingData.credits_other,
             BillingData.credits_total,
             BillingData.currency,
+            BillingData.invoice_month,
         )
         .where(
             func.trim(BillingData.project_id) == project.external_project_id.strip(),
@@ -1253,14 +1246,13 @@ async def export_account_costs(
     # 列对照（和 BQ Excel 导出一致）：
     #   服务 ID = service_id，SKU ID = sku_id，资源 ID = resource_name，
     #   计费类型 = cost_type（regular/tax/adjustment），
-    #   未含入的小计 = cost_at_list（标价），节省计划 = credits_committed (CUD)，
-    #   其他节省 = credits_other (SUD/Promo/FreeTier)，节省合计 = credits_total
+    #   未含入的小计 = cost_at_list（标价），节省合计 = credits_total
     base_headers = [
         "日期", "服务", "服务 ID", "用量类型", "SKU ID",
         "区域", "资源 ID", "计费类型",
         "用量", "用量单位",
-        "未含入的小计(USD)", "节省计划(USD)", "其他节省(USD)", "节省合计(USD)",
-        "费用/小计(USD)", "币种",
+        "未含入的小计(USD)", "节省合计(USD)",
+        "费用/小计(USD)", "币种", "发票月",
     ]
     if discount_pct is not None:
         factor = 1.0 - float(discount_pct) / 100.0
@@ -1291,14 +1283,13 @@ async def export_account_costs(
         ws.cell(row=ri, column=9, value=_f(r.usage_quantity) or 0)
         ws.cell(row=ri, column=10, value=r.usage_unit or "")
         ws.cell(row=ri, column=11, value=_f(r.cost_at_list)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=12, value=_f(r.credits_committed)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=13, value=_f(r.credits_other)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=14, value=_f(r.credits_total)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=15, value=cost).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=16, value=r.currency or "")
+        ws.cell(row=ri, column=12, value=_f(r.credits_total)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=13, value=cost).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=14, value=r.currency or "")
+        ws.cell(row=ri, column=15, value=r.invoice_month or "")
         if discount_pct is not None:
-            ws.cell(row=ri, column=17, value=float(discount_pct))
-            ws.cell(row=ri, column=18, value=cost * factor).number_format = '#,##0.000000'
+            ws.cell(row=ri, column=16, value=float(discount_pct))
+            ws.cell(row=ri, column=17, value=cost * factor).number_format = '#,##0.000000'
 
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col)].width = 18
@@ -1334,7 +1325,7 @@ def _build_excel(
     base_headers = [
         "云厂商", "账号名称", "账号ID", "日期",
         "服务", "服务 ID",
-        "未含入的小计(USD)", "节省计划(USD)", "其他节省(USD)", "节省合计(USD)",
+        "未含入的小计(USD)", "节省合计(USD)",
         "费用/小计(USD)", "币种",
     ]
     if discount_pct is not None:
@@ -1362,14 +1353,12 @@ def _build_excel(
         ws.cell(row=ri, column=5, value=r.product or "Unknown")
         ws.cell(row=ri, column=6, value=r.service_id or "")
         ws.cell(row=ri, column=7, value=_f(r.cost_at_list)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=8, value=_f(r.credits_committed)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=9, value=_f(r.credits_other)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=10, value=_f(r.credits_total)).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=11, value=cost).number_format = '#,##0.000000'
-        ws.cell(row=ri, column=12, value=r.currency or "")
+        ws.cell(row=ri, column=8, value=_f(r.credits_total)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=9, value=cost).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=10, value=r.currency or "")
         if discount_pct is not None:
-            ws.cell(row=ri, column=13, value=float(discount_pct))
-            ws.cell(row=ri, column=14, value=cost * factor).number_format = '#,##0.000000'
+            ws.cell(row=ri, column=11, value=float(discount_pct))
+            ws.cell(row=ri, column=12, value=cost * factor).number_format = '#,##0.000000'
 
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col)].width = 18

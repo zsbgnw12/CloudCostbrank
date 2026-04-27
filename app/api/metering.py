@@ -410,17 +410,16 @@ async def metering_detail_count(
 #   service_id   = 服务 ID         sku_id        = SKU ID
 #   resource_name= 资源 ID         cost_type     = 计费类型
 #   cost         = 费用 / 小计     cost_at_list  = 未含入的小计（标价）
-#   credits_committed = 节省计划 (CUD)
-#   credits_other     = 其他节省 (SUD/Promo/FreeTier)
+#   credits_total = 节省合计（细分见 billing_data.credits_breakdown JSONB）
 _CSV_HEADER = [
     "date", "provider", "project_id",
     "service_id", "product",
     "sku_id", "usage_type",
     "region", "resource_name", "cost_type",
     "usage_quantity", "usage_unit",
-    "cost", "cost_at_list",
-    "credits_committed", "credits_other", "credits_total",
+    "cost", "cost_at_list", "credits_total",
     "currency",
+    "invoice_month",
 ]
 
 
@@ -464,10 +463,9 @@ async def _stream_csv(stmt) -> AsyncIterator[str]:
                     r.usage_unit or "",
                     str(r.cost) if r.cost is not None else "",
                     str(r.cost_at_list) if r.cost_at_list is not None else "",
-                    str(r.credits_committed) if r.credits_committed is not None else "",
-                    str(r.credits_other) if r.credits_other is not None else "",
                     str(r.credits_total) if r.credits_total is not None else "",
                     r.currency or "",
+                    r.invoice_month or "",
                 ])
                 last_date = r.date
                 last_id = r.id
@@ -509,10 +507,9 @@ async def metering_export(
             BillingData.usage_unit,
             BillingData.cost,
             BillingData.cost_at_list,
-            BillingData.credits_committed,
-            BillingData.credits_other,
             BillingData.credits_total,
             BillingData.currency,
+            BillingData.invoice_month,
         ),
         date_start, date_end, provider, product, products=products,
     )
