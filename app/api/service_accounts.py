@@ -481,7 +481,13 @@ class AccountDailyCostRow(BaseModel):
     external_project_id: str
     date: str
     product: str | None
+    service_id: str | None = None
     cost: float
+    cost_at_list: float | None = None
+    credits_committed: float | None = None
+    credits_other: float | None = None
+    credits_total: float | None = None
+    currency: str | None = None
 
 
 @router.get("/daily-report", response_model=list[AccountDailyCostRow])
@@ -502,7 +508,13 @@ async def daily_report(
             BillingData.project_id,
             BillingData.date,
             BillingData.product,
+            func.max(BillingData.service_id).label("service_id"),
             func.sum(BillingData.cost).label("cost"),
+            func.sum(BillingData.cost_at_list).label("cost_at_list"),
+            func.sum(BillingData.credits_committed).label("credits_committed"),
+            func.sum(BillingData.credits_other).label("credits_other"),
+            func.sum(BillingData.credits_total).label("credits_total"),
+            func.max(BillingData.currency).label("currency"),
         )
         .join(
             Project,
@@ -529,6 +541,9 @@ async def daily_report(
 
     rows = (await db.execute(stmt)).all()
 
+    def _f(v):
+        return float(v) if v is not None else None
+
     return [
         AccountDailyCostRow(
             account_id=r.account_id,
@@ -537,7 +552,13 @@ async def daily_report(
             external_project_id=r.project_id or "",
             date=str(r.date),
             product=r.product or "Unknown",
-            cost=float(r.cost),
+            service_id=r.service_id,
+            cost=float(r.cost) if r.cost is not None else 0.0,
+            cost_at_list=_f(r.cost_at_list),
+            credits_committed=_f(r.credits_committed),
+            credits_other=_f(r.credits_other),
+            credits_total=_f(r.credits_total),
+            currency=r.currency,
         )
         for r in rows
     ]
@@ -1192,12 +1213,21 @@ async def export_account_costs(
     billing_stmt = (
         select(
             BillingData.date,
+            BillingData.service_id,
             BillingData.product,
+            BillingData.sku_id,
             BillingData.usage_type,
             BillingData.region,
-            BillingData.cost,
+            BillingData.resource_name,
+            BillingData.cost_type,
             BillingData.usage_quantity,
             BillingData.usage_unit,
+            BillingData.cost,
+            BillingData.cost_at_list,
+            BillingData.credits_committed,
+            BillingData.credits_other,
+            BillingData.credits_total,
+            BillingData.currency,
         )
         .where(
             func.trim(BillingData.project_id) == project.external_project_id.strip(),
@@ -1220,22 +1250,24 @@ async def export_account_costs(
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_align = Alignment(horizontal="center")
 
+    # 列对照（和 BQ Excel 导出一致）：
+    #   服务 ID = service_id，SKU ID = sku_id，资源 ID = resource_name，
+    #   计费类型 = cost_type（regular/tax/adjustment），
+    #   未含入的小计 = cost_at_list（标价），节省计划 = credits_committed (CUD)，
+    #   其他节省 = credits_other (SUD/Promo/FreeTier)，节省合计 = credits_total
+    base_headers = [
+        "日期", "服务", "服务 ID", "用量类型", "SKU ID",
+        "区域", "资源 ID", "计费类型",
+        "用量", "用量单位",
+        "未含入的小计(USD)", "节省计划(USD)", "其他节省(USD)", "节省合计(USD)",
+        "费用/小计(USD)", "币种",
+    ]
     if discount_pct is not None:
         factor = 1.0 - float(discount_pct) / 100.0
-        headers = [
-            "日期",
-            "服务",
-            "用量类型",
-            "区域",
-            "费用(USD)",
-            "折扣(%)",
-            "折后费用(USD)",
-            "用量",
-            "用量单位",
-        ]
+        headers = base_headers + ["折扣(%)", "折后费用(USD)"]
     else:
         factor = 1.0
-        headers = ["日期", "服务", "用量类型", "区域", "费用(USD)", "用量", "用量单位"]
+        headers = base_headers
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
@@ -1243,21 +1275,30 @@ async def export_account_costs(
         cell.fill = header_fill
         cell.alignment = header_align
 
+    def _f(v):
+        return float(v) if v is not None else None
+
     for ri, r in enumerate(rows, 2):
-        cost = float(r.cost)
+        cost = float(r.cost) if r.cost is not None else 0.0
         ws.cell(row=ri, column=1, value=str(r.date))
         ws.cell(row=ri, column=2, value=r.product or "Unknown")
-        ws.cell(row=ri, column=3, value=r.usage_type or "")
-        ws.cell(row=ri, column=4, value=r.region or "")
-        ws.cell(row=ri, column=5, value=cost).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=3, value=r.service_id or "")
+        ws.cell(row=ri, column=4, value=r.usage_type or "")
+        ws.cell(row=ri, column=5, value=r.sku_id or "")
+        ws.cell(row=ri, column=6, value=r.region or "")
+        ws.cell(row=ri, column=7, value=r.resource_name or "")
+        ws.cell(row=ri, column=8, value=r.cost_type or "")
+        ws.cell(row=ri, column=9, value=_f(r.usage_quantity) or 0)
+        ws.cell(row=ri, column=10, value=r.usage_unit or "")
+        ws.cell(row=ri, column=11, value=_f(r.cost_at_list)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=12, value=_f(r.credits_committed)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=13, value=_f(r.credits_other)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=14, value=_f(r.credits_total)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=15, value=cost).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=16, value=r.currency or "")
         if discount_pct is not None:
-            ws.cell(row=ri, column=6, value=float(discount_pct))
-            ws.cell(row=ri, column=7, value=cost * factor).number_format = '#,##0.000000'
-            ws.cell(row=ri, column=8, value=float(r.usage_quantity) if r.usage_quantity else 0)
-            ws.cell(row=ri, column=9, value=r.usage_unit or "")
-        else:
-            ws.cell(row=ri, column=6, value=float(r.usage_quantity) if r.usage_quantity else 0)
-            ws.cell(row=ri, column=7, value=r.usage_unit or "")
+            ws.cell(row=ri, column=17, value=float(discount_pct))
+            ws.cell(row=ri, column=18, value=cost * factor).number_format = '#,##0.000000'
 
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col)].width = 18
@@ -1290,27 +1331,27 @@ def _build_excel(
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_align = Alignment(horizontal="center")
 
+    base_headers = [
+        "云厂商", "账号名称", "账号ID", "日期",
+        "服务", "服务 ID",
+        "未含入的小计(USD)", "节省计划(USD)", "其他节省(USD)", "节省合计(USD)",
+        "费用/小计(USD)", "币种",
+    ]
     if discount_pct is not None:
         factor = 1.0 - float(discount_pct) / 100.0
-        headers = [
-            "云厂商",
-            "账号名称",
-            "账号ID",
-            "日期",
-            "服务",
-            "费用(USD)",
-            "折扣(%)",
-            "折后费用(USD)",
-        ]
+        headers = base_headers + ["折扣(%)", "折后费用(USD)"]
     else:
         factor = 1.0
-        headers = ["云厂商", "账号名称", "账号ID", "日期", "服务", "费用(USD)"]
+        headers = base_headers
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_align
+
+    def _f(v):
+        return float(v) if v is not None else None
 
     for ri, r in enumerate(rows, 2):
         cost = float(r.cost)
@@ -1319,10 +1360,16 @@ def _build_excel(
         ws.cell(row=ri, column=3, value=r.external_project_id)
         ws.cell(row=ri, column=4, value=r.date)
         ws.cell(row=ri, column=5, value=r.product or "Unknown")
-        ws.cell(row=ri, column=6, value=cost).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=6, value=r.service_id or "")
+        ws.cell(row=ri, column=7, value=_f(r.cost_at_list)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=8, value=_f(r.credits_committed)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=9, value=_f(r.credits_other)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=10, value=_f(r.credits_total)).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=11, value=cost).number_format = '#,##0.000000'
+        ws.cell(row=ri, column=12, value=r.currency or "")
         if discount_pct is not None:
-            ws.cell(row=ri, column=7, value=float(discount_pct))
-            ws.cell(row=ri, column=8, value=cost * factor).number_format = '#,##0.000000'
+            ws.cell(row=ri, column=13, value=float(discount_pct))
+            ws.cell(row=ri, column=14, value=cost * factor).number_format = '#,##0.000000'
 
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col)].width = 18

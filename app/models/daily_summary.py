@@ -29,6 +29,9 @@ class BillingDailySummary(Base):
     # 老数据这两列是 NULL；新 sync 之后会被填上。dashboard 读时用 COALESCE 兜底。
     total_cost_at_list: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     total_credits: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    # 拆分: total_credits = total_credits_committed + total_credits_other
+    total_credits_committed: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    total_credits_other: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     total_usage: Mapped[Decimal] = mapped_column(DECIMAL(20, 6), default=Decimal("0"))
     record_count: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())

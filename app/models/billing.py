@@ -49,7 +49,12 @@ class BillingData(Base):
     cost_at_list: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     # 节省金额（CUD/SUD/promo/free_tier 折扣总和，正数表示节省了多少钱）。
     # GCP credits 数组的 -SUM(amount)。其他 provider 写 NULL 或 0。
+    # credits_total = credits_committed + credits_other（拆分后保留总和方便对账）
     credits_total: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    # 节省计划/CUD —— GCP credits.type='COMMITTED_USAGE_DISCOUNT' 的金额（正数）
+    credits_committed: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    # 其他节省 —— SUSTAINED_USAGE_DISCOUNT / PROMOTION / FREE_TIER / 其他类型合计（正数）
+    credits_other: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     usage_quantity: Mapped[Decimal] = mapped_column(DECIMAL(20, 6), default=Decimal("0"))
     usage_unit: Mapped[str | None] = mapped_column(String(50))
     currency: Mapped[str] = mapped_column(String(10), default="USD")

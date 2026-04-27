@@ -65,16 +65,30 @@ class GCPCollector(BaseCollector):
 
         # 标价合计：所有 GCP 源都有 cost_at_list；没有就 NULL
         cost_at_list_select = "SUM(cost_at_list) as cost_at_list," if has_cost_at_list else "CAST(NULL AS NUMERIC) as cost_at_list,"
-        # credits 折扣合计：BQ 里 credits 是 ARRAY<RECORD<amount...>>，amount 是负值（折扣是负的）
-        # 我们入库时取绝对值，让 cost + credits_total ≈ cost_at_list 直观
+        # credits 折扣合计：BQ 里 credits 是 ARRAY<RECORD<amount, type, ...>>，
+        # amount 是负值（折扣是负的）；× -1 后存正数表示"节省金额"。
+        # 拆分对应 Excel 导出列：
+        #   credits_committed = type='COMMITTED_USAGE_DISCOUNT' (节省计划/CUD)
+        #   credits_other     = 其他 type (SUSTAINED_USAGE_DISCOUNT / PROMOTION / FREE_TIER ...)
+        #   credits_total     = committed + other（冗余但便于对账）
         if has_credits:
             credits_select = (
                 "SUM(IFNULL(("
                 "SELECT SUM(c.amount) FROM UNNEST(credits) c"
                 "), 0)) * -1 as credits_total,"
+                " SUM(IFNULL(("
+                "SELECT SUM(c.amount) FROM UNNEST(credits) c WHERE c.type='COMMITTED_USAGE_DISCOUNT'"
+                "), 0)) * -1 as credits_committed,"
+                " SUM(IFNULL(("
+                "SELECT SUM(c.amount) FROM UNNEST(credits) c WHERE c.type IS NULL OR c.type!='COMMITTED_USAGE_DISCOUNT'"
+                "), 0)) * -1 as credits_other,"
             )
         else:
-            credits_select = "CAST(NULL AS NUMERIC) as credits_total,"
+            credits_select = (
+                "CAST(NULL AS NUMERIC) as credits_total,"
+                " CAST(NULL AS NUMERIC) as credits_committed,"
+                " CAST(NULL AS NUMERIC) as credits_other,"
+            )
         # resource：取 cost 最高那行的 resource.name 作代表（聚合后只能保留一个）
         if has_resource:
             # 注意：要按 cost 排，但有些 VIEW 没 cost 字段，用 cost_at_list 排
@@ -155,6 +169,8 @@ class GCPCollector(BaseCollector):
                 "cost": float(row.cost or 0),
                 "cost_at_list": float(row.cost_at_list) if row.cost_at_list is not None else None,
                 "credits_total": float(row.credits_total) if row.credits_total is not None else None,
+                "credits_committed": float(row.credits_committed) if row.credits_committed is not None else None,
+                "credits_other": float(row.credits_other) if row.credits_other is not None else None,
                 "usage_quantity": float(row.usage_quantity or 0),
                 "usage_unit": row.pricing_unit or "",
                 "currency": row.currency or "USD",

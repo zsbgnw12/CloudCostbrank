@@ -406,9 +406,21 @@ async def metering_detail_count(
     return {"total": result.scalar_one()}
 
 
+# 列对照（和 BQ Excel 导出一致）：
+#   service_id   = 服务 ID         sku_id        = SKU ID
+#   resource_name= 资源 ID         cost_type     = 计费类型
+#   cost         = 费用 / 小计     cost_at_list  = 未含入的小计（标价）
+#   credits_committed = 节省计划 (CUD)
+#   credits_other     = 其他节省 (SUD/Promo/FreeTier)
 _CSV_HEADER = [
-    "date", "provider", "project_id", "product",
-    "usage_type", "region", "cost", "usage_quantity", "usage_unit", "currency",
+    "date", "provider", "project_id",
+    "service_id", "product",
+    "sku_id", "usage_type",
+    "region", "resource_name", "cost_type",
+    "usage_quantity", "usage_unit",
+    "cost", "cost_at_list",
+    "credits_committed", "credits_other", "credits_total",
+    "currency",
 ]
 
 
@@ -445,9 +457,17 @@ async def _stream_csv(stmt) -> AsyncIterator[str]:
             for r in rows:
                 writer.writerow([
                     r.date.isoformat(), r.provider, r.project_id or "",
-                    r.product or "", r.usage_type or "", r.region or "",
-                    str(r.cost), str(r.usage_quantity), r.usage_unit or "",
-                    r.currency,
+                    r.service_id or "", r.product or "",
+                    r.sku_id or "", r.usage_type or "",
+                    r.region or "", r.resource_name or "", r.cost_type or "",
+                    str(r.usage_quantity) if r.usage_quantity is not None else "",
+                    r.usage_unit or "",
+                    str(r.cost) if r.cost is not None else "",
+                    str(r.cost_at_list) if r.cost_at_list is not None else "",
+                    str(r.credits_committed) if r.credits_committed is not None else "",
+                    str(r.credits_other) if r.credits_other is not None else "",
+                    str(r.credits_total) if r.credits_total is not None else "",
+                    r.currency or "",
                 ])
                 last_date = r.date
                 last_id = r.id
@@ -478,12 +498,20 @@ async def metering_export(
             BillingData.date,
             BillingData.provider,
             BillingData.project_id,
+            BillingData.service_id,
             BillingData.product,
+            BillingData.sku_id,
             BillingData.usage_type,
             BillingData.region,
-            BillingData.cost,
+            BillingData.resource_name,
+            BillingData.cost_type,
             BillingData.usage_quantity,
             BillingData.usage_unit,
+            BillingData.cost,
+            BillingData.cost_at_list,
+            BillingData.credits_committed,
+            BillingData.credits_other,
+            BillingData.credits_total,
             BillingData.currency,
         ),
         date_start, date_end, provider, product, products=products,

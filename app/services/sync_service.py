@@ -116,7 +116,8 @@ _BILLING_COLUMNS = [
     "date", "provider", "data_source_id", "project_id", "project_name",
     "service_id", "sku_id",
     "product", "usage_type", "region",
-    "cost", "cost_at_list", "credits_total",
+    "cost", "cost_at_list",
+    "credits_total", "credits_committed", "credits_other",
     "usage_quantity",
     "usage_unit", "currency",
     "resource_name", "cost_type",
@@ -150,7 +151,9 @@ def upsert_billing_rows(rows: list[dict]):
                     service_id VARCHAR(40), sku_id VARCHAR(40),
                     product VARCHAR(200), usage_type VARCHAR(300), region VARCHAR(50),
                     cost DECIMAL(20,6),
-                    cost_at_list DECIMAL(20,6), credits_total DECIMAL(20,6),
+                    cost_at_list DECIMAL(20,6),
+                    credits_total DECIMAL(20,6),
+                    credits_committed DECIMAL(20,6), credits_other DECIMAL(20,6),
                     usage_quantity DECIMAL(20,6),
                     usage_unit VARCHAR(50), currency VARCHAR(10),
                     resource_name VARCHAR(500), cost_type VARCHAR(20),
@@ -182,6 +185,8 @@ def upsert_billing_rows(rows: list[dict]):
                     SUM(cost) AS cost,
                     SUM(cost_at_list) AS cost_at_list,
                     SUM(credits_total) AS credits_total,
+                    SUM(credits_committed) AS credits_committed,
+                    SUM(credits_other) AS credits_other,
                     SUM(usage_quantity) AS usage_quantity,
                     MAX(usage_unit) AS usage_unit,
                     MAX(currency) AS currency,
@@ -196,6 +201,8 @@ def upsert_billing_rows(rows: list[dict]):
                     cost = EXCLUDED.cost,
                     cost_at_list = EXCLUDED.cost_at_list,
                     credits_total = EXCLUDED.credits_total,
+                    credits_committed = EXCLUDED.credits_committed,
+                    credits_other = EXCLUDED.credits_other,
                     usage_quantity = EXCLUDED.usage_quantity,
                     project_name = EXCLUDED.project_name,
                     service_id = EXCLUDED.service_id,
@@ -224,13 +231,16 @@ def refresh_daily_summary(start_date: str, end_date: str):
         conn.execute(text("""
             INSERT INTO billing_daily_summary
                 (date, provider, data_source_id, project_id, product,
-                 total_cost, total_cost_at_list, total_credits,
+                 total_cost, total_cost_at_list,
+                 total_credits, total_credits_committed, total_credits_other,
                  total_usage, record_count)
             SELECT
                 date, provider, data_source_id, project_id, product,
                 SUM(cost),
                 SUM(cost_at_list),
                 SUM(credits_total),
+                SUM(credits_committed),
+                SUM(credits_other),
                 SUM(usage_quantity),
                 COUNT(*)
             FROM billing_data

@@ -124,18 +124,42 @@ _EXPORT_COLUMNS = [
     BillingData.provider,
     BillingData.project_id,
     BillingData.project_name,
+    BillingData.service_id,
     BillingData.product,
+    BillingData.sku_id,
     BillingData.usage_type,
     BillingData.region,
-    BillingData.cost,
+    BillingData.resource_name,
+    BillingData.cost_type,
     BillingData.usage_quantity,
     BillingData.usage_unit,
+    BillingData.cost,
+    BillingData.cost_at_list,
+    BillingData.credits_committed,
+    BillingData.credits_other,
+    BillingData.credits_total,
     BillingData.currency,
 ]
 
+# 列对照（保持和 BQ Excel 导出口径一致）：
+#   service_id   = 服务 ID
+#   sku_id       = SKU ID
+#   resource_name= 资源 ID
+#   cost_type    = 计费类型 (regular/tax/adjustment)
+#   cost         = 费用 / 小计
+#   cost_at_list = 未含入的小计（标价）
+#   credits_committed = 节省计划 (CUD)
+#   credits_other     = 其他节省 (SUD/Promo/FreeTier)
+#   credits_total     = 节省合计 (= committed + other)
 _CSV_HEADER = [
-    "date", "provider", "project_id", "project_name", "product",
-    "usage_type", "region", "cost", "usage_quantity", "usage_unit", "currency",
+    "date", "provider", "project_id", "project_name",
+    "service_id", "product",
+    "sku_id", "usage_type",
+    "region", "resource_name", "cost_type",
+    "usage_quantity", "usage_unit",
+    "cost", "cost_at_list",
+    "credits_committed", "credits_other", "credits_total",
+    "currency",
 ]
 
 
@@ -174,9 +198,20 @@ async def _stream_csv(stmt) -> AsyncIterator[str]:
             buf = io.StringIO()
             writer = csv.writer(buf)
             for r in rows:
+                # 顺序需和 _CSV_HEADER 一致，新字段允许 NULL → 空串
                 writer.writerow([
-                    r.date.isoformat(), r.provider, r.project_id, r.project_name, r.product,
-                    r.usage_type, r.region, str(r.cost), str(r.usage_quantity), r.usage_unit, r.currency,
+                    r.date.isoformat(), r.provider, r.project_id or "", r.project_name or "",
+                    r.service_id or "", r.product or "",
+                    r.sku_id or "", r.usage_type or "",
+                    r.region or "", r.resource_name or "", r.cost_type or "",
+                    str(r.usage_quantity) if r.usage_quantity is not None else "",
+                    r.usage_unit or "",
+                    str(r.cost) if r.cost is not None else "",
+                    str(r.cost_at_list) if r.cost_at_list is not None else "",
+                    str(r.credits_committed) if r.credits_committed is not None else "",
+                    str(r.credits_other) if r.credits_other is not None else "",
+                    str(r.credits_total) if r.credits_total is not None else "",
+                    r.currency or "",
                 ])
                 last_date = r.date
                 last_id = r.id
