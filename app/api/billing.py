@@ -337,9 +337,9 @@ async def billing_export_full(
 
     新加列见 _CSV_HEADER_FULL。和 BQ Excel 导出口径对齐：
       cost_at_list = 未含入的小计 (标价)
-      credits_committed = 节省计划 (CUD)
-      credits_other = 其他节省
       credits_total = 节省合计
+      credits_breakdown = 按 credits.type 拆分的 JSON map (RESELLER_MARGIN/PROMOTION/DISCOUNT...)
+      cost_type = regular / tax / adjustment（已经独立成行不再混算）
     """
     ds = _parse_optional_date(date_start, param="date_start")
     de = _parse_optional_date(date_end, param="date_end")

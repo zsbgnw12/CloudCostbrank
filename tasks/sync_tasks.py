@@ -64,17 +64,25 @@ def sync_data_source(self, data_source_id: int, start_month: str, end_month: str
         collector = get_collector(provider)
         rows = collector.collect_billing(secret_data, config, start_date, end_date)
 
+        # 把 dict/list 字段序列化成 JSON 字符串：COPY → JSONB 列要求双引号 JSON。
+        # Python str(dict) 用单引号，PG 解析会失败，所以必须 json.dumps。
         for row in rows:
             row["data_source_id"] = data_source_id
             row["provider"] = provider
-            if isinstance(row.get("tags"), (dict, list)):
-                row["tags"] = json.dumps(row["tags"], ensure_ascii=False)
-            elif not row.get("tags"):
-                row["tags"] = "{}"
-            if isinstance(row.get("additional_info"), (dict, list)):
-                row["additional_info"] = json.dumps(row["additional_info"], ensure_ascii=False)
-            elif not row.get("additional_info"):
-                row["additional_info"] = "{}"
+            # tags / additional_info：保留老行为 —— 空时写 "{}"（向后兼容已有数据形态）
+            for f in ("tags", "additional_info"):
+                v = row.get(f)
+                if isinstance(v, (dict, list)):
+                    row[f] = json.dumps(v, ensure_ascii=False)
+                elif not v:
+                    row[f] = "{}"
+            # system_labels / credits_breakdown：新字段，允许 NULL（区分"没数据"和"空")
+            for f in ("system_labels", "credits_breakdown"):
+                v = row.get(f)
+                if isinstance(v, (dict, list)):
+                    row[f] = json.dumps(v, ensure_ascii=False) if v else None
+                elif v in ("", {}):
+                    row[f] = None
 
         upserted = upsert_billing_rows(rows)
 
