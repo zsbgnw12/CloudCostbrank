@@ -1,4 +1,4 @@
-"""Metering API — cloud resource usage from billing_data (AWS/GCP/Azure sync)."""
+"""Metering API — cloud resource usage from billing_summary (AWS/GCP/Azure sync)."""
 
 import csv
 import io
@@ -55,7 +55,7 @@ _ACCOUNT_IDS_QUERY = Query(
 
 _PRODUCTS_QUERY = Query(
     None,
-    description="按服务名批量过滤：billing_data.product 列；与 product 二选一，传入时优先生效",
+    description="按服务名批量过滤：billing_summary.product 列；与 product 二选一，传入时优先生效",
 )
 
 
@@ -410,7 +410,7 @@ async def metering_detail_count(
 #   service_id   = 服务 ID         sku_id        = SKU ID
 #   resource_name= 资源 ID         cost_type     = 计费类型
 #   cost         = 费用 / 小计     cost_at_list  = 未含入的小计（标价）
-#   credits_total = 节省合计（细分见 billing_data.credits_breakdown JSONB）
+#   credits_total = 节省合计（细分见 billing_summary.credits_breakdown JSONB）
 _CSV_HEADER = [
     "date", "provider", "project_id",
     "service_id", "product",
@@ -547,9 +547,9 @@ async def taiji_ingest(
       4. 该 CloudAccount 下必须有且仅有 1 个 DataSource（配置不歧义）
 
     处理流程：
-      1. 原始日志按 (data_source_id, id) 主键幂等 upsert → taiji_log_raw
+      1. 原始日志按 (data_source_id, id) 主键幂等 upsert → billing_raw_taiji
       2. 识别本批涉及的日期（created_at 派生 UTC 日期）
-      3. 对每个涉及日期，**从 taiji_log_raw 重新全量聚合**覆盖 billing_data + token_usage
+      3. 对每个涉及日期，**从 billing_raw_taiji 重新全量聚合**覆盖 billing_summary + token_usage
       4. 自动建新 token 的 Project
     """
     # 1. 鉴权方式必须是 API Key
@@ -601,6 +601,7 @@ async def taiji_ingest(
     from app.services.sync_service import (
         upsert_taiji_raw_logs,
         reaggregate_from_taiji_raw,
+        update_data_source_sync_status,
     )
 
     logs_dicts = [lg.model_dump() for lg in body.logs]
@@ -614,6 +615,14 @@ async def taiji_ingest(
     })
 
     reagg = reaggregate_from_taiji_raw(ds.id, dates, quota_per_usd=quota_per_usd)
+
+    # Push 模式也要更新 DS 的 last_sync_at / sync_status，让 /api/sync/last
+    # 与仪表盘的"最近同步时间"反映 taiji 推送的新鲜度。
+    try:
+        update_data_source_sync_status(ds.id, "success")
+    except Exception:
+        # 主要数据已落库，状态时间戳更新失败不影响响应
+        pass
 
     return TaijiIngestResponse(
         received=len(body.logs),

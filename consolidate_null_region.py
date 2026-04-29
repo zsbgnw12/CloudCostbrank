@@ -24,6 +24,10 @@ Safety:
   2. Capture before/after totals per data_source, assert equal
   3. If assertion fails, rollback
 """
+raise RuntimeError(
+    "billing_data 表已 rename 为 billing_summary，"
+    "复用前请把脚本里所有 billing_data 表名改为 billing_summary。"
+)
 import os, time
 from pathlib import Path
 from sqlalchemy import create_engine, text

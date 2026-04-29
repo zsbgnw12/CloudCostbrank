@@ -13,7 +13,7 @@ from app.models.cloud_account import CloudAccount
 from app.models.project import Project
 from app.models.supply_source import SupplySource
 from app.models.sync_log import SyncLog
-from app.models.taiji_log_raw import TaijiLogRaw
+from app.models.billing_raw_taiji import BillingRawTaiji
 from app.services.crypto_service import decrypt_to_dict
 from app.services.default_supply_sources import (
     ensure_other_gcp_supply_source_id_sync,
@@ -189,7 +189,7 @@ def upsert_billing_rows(rows: list[dict]):
             # GROUP BY 加上 cost_type，对齐 019 后的 unique 约束 (含 cost_type)。
             # ON CONFLICT 也加 cost_type。这样 regular/tax/adjustment 各自独立行，不再被混算。
             cur.execute(f"""
-                INSERT INTO billing_data ({cols_str})
+                INSERT INTO billing_summary ({cols_str})
                 SELECT
                     date, provider, data_source_id, project_id,
                     MAX(project_name) AS project_name,
@@ -241,7 +241,7 @@ def upsert_billing_rows(rows: list[dict]):
                     additional_info = EXCLUDED.additional_info
             """)
 
-            logger.info("Merged %d rows into billing_data", len(rows))
+            logger.info("Merged %d rows into billing_summary", len(rows))
             return len(rows)
         finally:
             cur.close()
@@ -267,7 +267,7 @@ def refresh_daily_summary(start_date: str, end_date: str):
                 SUM(credits_total),
                 SUM(usage_quantity),
                 COUNT(*)
-            FROM billing_data
+            FROM billing_summary
             WHERE date >= :sd AND date <= :ed
             GROUP BY date, provider, data_source_id, project_id, product
         """), {"sd": start_date, "ed": end_date})
@@ -547,7 +547,7 @@ def upsert_token_usage_rows(rows: list[dict], *, provider: str, data_source_id: 
 # ────────────────────── Taiji Push ingest ──────────────────────
 
 _TAIJI_RAW_UPSERT = text("""
-    INSERT INTO taiji_log_raw (
+    INSERT INTO billing_raw_taiji (
         data_source_id, id, date, created_at, type,
         user_id, username, token_id, token_name,
         channel_id, channel_name, model_name,
@@ -640,7 +640,7 @@ def reaggregate_from_taiji_raw(
     quota_per_usd: int,
 ) -> dict:
     """
-    从 taiji_log_raw 表按涉及日期重算 billing_data + token_usage，**先删后插**
+    从 billing_raw_taiji 表按涉及日期重算 billing_summary + token_usage，**先删后插**
     保证"taiji 原始日志 = billing/token 聚合"单一真相。
 
     返回 {"billing_rows": N, "token_usage_rows": M, "projects_created": K}
@@ -658,9 +658,9 @@ def reaggregate_from_taiji_raw(
     raw_dicts: list[dict] = []
     with Session(engine) as session:
         rows = session.execute(
-            select(TaijiLogRaw).where(
-                TaijiLogRaw.data_source_id == data_source_id,
-                TaijiLogRaw.date.in_(date_objs),
+            select(BillingRawTaiji).where(
+                BillingRawTaiji.data_source_id == data_source_id,
+                BillingRawTaiji.date.in_(date_objs),
             )
         ).scalars().all()
         for r in rows:
@@ -702,7 +702,7 @@ def reaggregate_from_taiji_raw(
     # 3. 先删后插 — 保证"原始即真相"
     with engine.begin() as conn:
         conn.execute(text("""
-            DELETE FROM billing_data
+            DELETE FROM billing_summary
             WHERE provider='taiji' AND data_source_id=:ds AND date = ANY(:dates)
         """), {"ds": data_source_id, "dates": date_objs})
         conn.execute(text("""
@@ -737,7 +737,7 @@ def gc_taiji_raw_older_than(days: int = 30) -> int:
     cutoff = dt.date.today() - dt.timedelta(days=days)
     with engine.begin() as conn:
         result = conn.execute(
-            text("DELETE FROM taiji_log_raw WHERE date < :cutoff"),
+            text("DELETE FROM billing_raw_taiji WHERE date < :cutoff"),
             {"cutoff": cutoff},
         )
         deleted = result.rowcount or 0

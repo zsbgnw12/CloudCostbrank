@@ -5,6 +5,10 @@
   01186D-EC0E18-F83B2B  →  data_source_id = 5  (GCP-cb_export)
   010F18-588F4E-8428CE  →  data_source_id = 6  (GCP-px_billing)
 """
+raise RuntimeError(
+    "billing_data 表已 rename 为 billing_summary，"
+    "复用前请把脚本里所有 billing_data 表名改为 billing_summary。"
+)
 
 import csv
 import json

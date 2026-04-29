@@ -1,4 +1,4 @@
-"""Pydantic schemas for metering API — reads from billing_data (cloud sync)."""
+"""Pydantic schemas for metering API — reads from billing_summary (cloud sync)."""
 
 import datetime as dt
 from decimal import Decimal

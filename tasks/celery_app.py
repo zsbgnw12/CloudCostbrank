@@ -9,7 +9,7 @@ celery_app = Celery(
     "cloudcost",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["tasks.sync_tasks"],
+    include=["tasks.sync_tasks", "tasks.partition_maintenance"],
 )
 
 celery_app.conf.update(
@@ -41,6 +41,18 @@ celery_app.conf.beat_schedule = {
     "daily-taiji-raw-gc": {
         "task": "tasks.sync_tasks.gc_taiji_raw_logs",
         "schedule": crontab(hour=4, minute=0),
+    },
+    "ensure-billing-partitions-1": {
+        "task": "tasks.partition_maintenance.ensure_billing_summary_partition",
+        "schedule": crontab(day_of_month=1, hour=2, minute=0),
+    },
+    "ensure-billing-partitions-15": {
+        "task": "tasks.partition_maintenance.ensure_billing_summary_partition",
+        "schedule": crontab(day_of_month=15, hour=2, minute=0),
+    },
+    "ensure-billing-partitions-25": {
+        "task": "tasks.partition_maintenance.ensure_billing_summary_partition",
+        "schedule": crontab(day_of_month=25, hour=2, minute=0),
     },
 }
 

@@ -49,10 +49,14 @@ _DB_UNAVAILABLE = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create missing tables on startup (safe: CREATE IF NOT EXISTS)."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables verified / created.")
+    """Application lifespan — table creation is owned by alembic; do not create_all here.
+
+    Phase 1 migration removed the previous `Base.metadata.create_all` call because
+    `billing_summary` is a partition table and `create_all` would emit plain-table
+    DDL that desyncs ORM metadata from DB structure. All schema changes go through
+    alembic upgrade.
+    """
+    logger.info("Application started; schema is managed by alembic.")
     yield
 
 

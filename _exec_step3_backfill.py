@@ -2,6 +2,10 @@
 Bypasses SQLAlchemy engine (flaky on Azure PG idle) — uses psycopg2 with retry.
 Mirrors sync_service.upsert_billing_rows: COPY to staging, GROUP BY + SUM,
 INSERT ... ON CONFLICT DO UPDATE (= sum overwritten by re-aggregated value)."""
+raise RuntimeError(
+    "billing_data 表已 rename 为 billing_summary，"
+    "复用前请把脚本里所有 billing_data 表名改为 billing_summary。"
+)
 import os, sys, io, json, time
 from pathlib import Path
 from decimal import Decimal

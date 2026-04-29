@@ -9,7 +9,7 @@
 ## ER 关系总览
 
 ```
-categories 1──N data_sources 1──N billing_data
+categories 1──N data_sources 1──N billing_summary
     │               │                 
     │               └──N sync_logs
     │               └──N resource_inventory
@@ -99,7 +99,7 @@ operation_logs (独立)
 {"subscription_id": "45d7a360-...", "collect_mode": "subscription", "cost_metric": "ActualCost"}
 ```
 
-**关联:** → billing_data.data_source_id, sync_logs.data_source_id, projects.data_source_id, resource_inventory.data_source_id
+**关联:** → billing_summary.data_source_id, sync_logs.data_source_id, projects.data_source_id, resource_inventory.data_source_id
 
 ---
 
@@ -171,7 +171,17 @@ operation_logs (独立)
 
 ---
 
-## 6. billing_data（费用明细 — 核心大表）
+## 6. billing_summary（费用明细 — 核心大表，按月分区）
+
+> **Phase 1 迁移说明**：原表名为 `billing_data`，alembic 020 已 rename 为
+> `billing_summary` 并改造为 PG declarative partitioning（`PARTITION BY RANGE(date)`）。
+> 父表上声明的索引 / 唯一约束自动下放到所有月分区；
+> 历史月分区命名 `billing_summary_YYYYMM`，外加 `billing_summary_default` 兜底。
+> 旧名 `billing_data` 现在是只读 VIEW，指向 `billing_summary`，30 天观察期后下线。
+> Celery beat 每月 1/15/25 02:00 跑 `tasks.partition_maintenance.ensure_billing_summary_partition`，
+> 幂等保证未来 3 个月分区可用，并在 default 分区有数据时触发自动修复。
+> taiji 原始日志表 `taiji_log_raw` 已 rename 为 `billing_raw_taiji`（alembic 021）。
+
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -216,7 +226,7 @@ UNIQUE (date, data_source_id, project_id, product, usage_type, region)
 | resource_id | VARCHAR(500) | | 云厂商资源 ID |
 | resource_name | VARCHAR(200) | | |
 | resource_type | VARCHAR(100) | | VM/Disk/DB/Network 等 |
-| product | VARCHAR(200) | | 对应 billing_data.product |
+| product | VARCHAR(200) | | 对应 billing_summary.product |
 | region | VARCHAR(50) | | |
 | status | VARCHAR(20) | DEFAULT 'active' | |
 | tags | JSONB | DEFAULT '{}' | |

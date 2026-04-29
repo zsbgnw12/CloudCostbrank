@@ -1,7 +1,7 @@
 """Dashboard aggregation service with Redis caching.
 
 Reads from pre-aggregated billing_daily_summary for most queries.
-Falls back to billing_data only when summary columns are insufficient
+Falls back to billing_summary only when summary columns are insufficient
 (region breakdown, unassigned project names).
 
 All public functions take `visible_ds: list[int] | None`:
@@ -378,7 +378,7 @@ async def get_by_service(
 async def get_by_region(
     db: AsyncSession, month: str, visible_ds: list[int] | None = None,
 ) -> list[dict]:
-    """Region breakdown — must query billing_data (summary lacks region column)."""
+    """Region breakdown — must query billing_summary (summary lacks region column)."""
     ck = _cache_key("by_region", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:
@@ -481,7 +481,7 @@ async def get_top_growth(
 async def get_unassigned(
     db: AsyncSession, month: str, visible_ds: list[int] | None = None,
 ) -> list[dict]:
-    """Unassigned projects — uses billing_data for project_name availability."""
+    """Unassigned projects — uses billing_summary for project_name availability."""
     ck = _cache_key("unassigned", month, _scope_token(visible_ds))
     cached = await _cache_get(ck)
     if cached:

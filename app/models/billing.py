@@ -17,8 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+# TODO(Phase5): rename class BillingData → BillingSummary, see migration ticket
 class BillingData(Base):
-    __tablename__ = "billing_data"
+    __tablename__ = "billing_summary"
     __table_args__ = (
         # cost_type 加进唯一键，让 regular / tax / adjustment 各自独立成行，
         # 不再被 ANY_VALUE 吞掉混算。

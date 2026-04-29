@@ -242,6 +242,8 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
             "product": model_name,
             "usage_type": channel or "",
             "region": channel or None,
+            # billing_data.cost_type NOT NULL；taiji 全部按常规消费记账。
+            "cost_type": "regular",
             "cost": round(cost_usd, 6),
             "usage_quantity": float(total_tokens),
             "usage_unit": "tokens",

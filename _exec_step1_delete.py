@@ -1,5 +1,9 @@
 """STEP 1 — DELETE CSV rows in single transaction with self-check.
 Aborts (ROLLBACK) if delete count != expected 13724."""
+raise RuntimeError(
+    "billing_data 表已 rename 为 billing_summary，"
+    "复用前请把脚本里所有 billing_data 表名改为 billing_summary。"
+)
 import sys; sys.path.insert(0, ".")
 from _db import connect
 

@@ -65,7 +65,7 @@ async def refresh_summary(
     with Session(engine) as session:
         if not start_date or not end_date:
             row = session.execute(
-                text("SELECT MIN(date)::text, MAX(date)::text FROM billing_data")
+                text("SELECT MIN(date)::text, MAX(date)::text FROM billing_summary")
             ).first()
             if not row or row[0] is None:
                 return {"status": "skipped", "reason": "no billing data"}
