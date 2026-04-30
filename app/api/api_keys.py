@@ -29,7 +29,7 @@ async def list_keys(
 ):
     # Admin sees all; others only their own.
     stmt = select(ApiKey).order_by(ApiKey.id.desc())
-    if "cloud_admin" not in (principal.user.roles or []):
+    if not principal.is_admin:
         stmt = stmt.where(ApiKey.owner_user_id == principal.user.id)
     rows = await db.execute(stmt)
     return rows.scalars().all()
@@ -75,8 +75,7 @@ async def revoke_key(
     ak = await db.get(ApiKey, key_id)
     if not ak:
         raise HTTPException(404, "Key not found")
-    is_admin = "cloud_admin" in (principal.user.roles or [])
-    if not is_admin and ak.owner_user_id != principal.user.id:
+    if not principal.is_admin and ak.owner_user_id != principal.user.id:
         raise HTTPException(403, "Forbidden")
     if ak.revoked_at is not None:
         return None

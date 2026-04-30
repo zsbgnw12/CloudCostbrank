@@ -33,4 +33,8 @@ class Principal:
 
     @property
     def is_admin(self) -> bool:
-        return "cloud_admin" in self.roles or "cloud_admin" in (self.user.roles or [])
+        # Casdoor 是单一权威源:只信 principal.roles。这个字段已由 middleware 按
+        # 认证方式正确填充(Casdoor JWT 用 token roles,机器应用 fallback DB,
+        # API key 用 owner DB roles)。再读 user.roles 做并集会让 Casdoor 后台
+        # 撤销角色失效(DB 里的旧角色复活)。
+        return "cloud_admin" in (self.roles or [])

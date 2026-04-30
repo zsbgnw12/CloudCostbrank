@@ -46,8 +46,9 @@ def require_roles(*roles: str):
     allowed.add("cloud_admin")
 
     def _dep(principal: Principal = Depends(get_current_principal)) -> Principal:
-        effective = set(principal.roles or []) | set(principal.user.roles or [])
-        if effective & allowed:
+        # 只信 principal.roles。middleware 已按认证方式填充正确来源,
+        # 这里再做 principal.roles | user.roles 并集会让 Casdoor 撤销角色失效。
+        if set(principal.roles or []) & allowed:
             return principal
         raise HTTPException(status_code=403, detail="Forbidden: missing required role")
 

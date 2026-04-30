@@ -257,16 +257,15 @@ async def me(
 ):
     user = principal.user
     visible = await visible_cloud_account_ids(db, principal)
-    # 角色:取 token 里(Casdoor 实时)+ DB 里(admin SQL 配的,给机器应用用)的并集。
-    # 跟 dependencies.require_roles 的判断口径一致(那里也是 principal.roles | user.roles)。
-    # 之前只返回 user.roles 导致 Casdoor 已配角色的人类用户看到 me.roles=[]。
-    effective_roles = sorted(set(principal.roles or []) | set(user.roles or []))
+    # Casdoor 是单一权威源:返回 principal.roles(middleware 已按认证方式填好:
+    # 人类登录用 token roles、机器应用 fallback DB、API key 用 owner DB)。
+    # 不做并集——保证 Casdoor 后台撤销角色立即生效。
     return CurrentUser(
         id=user.id,
         username=user.username,
         email=user.email,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
-        roles=effective_roles,
+        roles=sorted(set(principal.roles or [])),
         visible_cloud_account_ids=visible,
     )

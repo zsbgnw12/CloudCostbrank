@@ -8,22 +8,12 @@ All list/detail endpoints must call this before building their query, then
 apply `WHERE cloud_account_id IN (...)` or return [] when the list is empty.
 """
 
-from typing import Iterable
-
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.principal import Principal
-from app.models.user import User
 from app.models.user_grant import UserCloudAccountGrant
-
-
-def _is_admin(user: User, principal_roles: Iterable[str] | None = None) -> bool:
-    roles = set(user.roles or [])
-    if principal_roles:
-        roles |= set(principal_roles)
-    return "cloud_admin" in roles
 
 
 async def visible_cloud_account_ids(
@@ -40,7 +30,8 @@ async def visible_cloud_account_ids(
       - Non-admin user → intersection of grants and (optional) key restriction.
     """
     user = principal.user
-    is_admin = _is_admin(user, principal.roles)
+    # 只信 principal.roles(middleware 已按认证方式正确填充)。
+    is_admin = "cloud_admin" in (principal.roles or [])
     restricted = principal.restricted_cloud_account_ids if principal.method.value == "api_key" else None
 
     if is_admin:
