@@ -8,7 +8,7 @@ import io
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select, func
@@ -304,6 +304,7 @@ def _principal_operator(request) -> str | None:
 
 @router.get("/", response_model=list[ServiceAccountListItem])
 async def list_accounts(
+    response: Response,
     provider: str | None = None,
     status: str | None = None,
     customer_code: str | None = None,
@@ -311,7 +312,7 @@ async def list_accounts(
     page_size: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = (
+    base_stmt = (
         select(
             Project.id,
             Project.name,
@@ -326,19 +327,32 @@ async def list_accounts(
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
         .where(Project.recycled_at.is_(None))
-        .order_by(SupplySource.provider, Supplier.name, Project.name)
     )
     if provider:
-        stmt = stmt.where(SupplySource.provider == provider)
+        base_stmt = base_stmt.where(SupplySource.provider == provider)
     if status:
-        stmt = stmt.where(Project.status == status)
+        base_stmt = base_stmt.where(Project.status == status)
     if customer_code:
         code = _normalize_code(customer_code)
-        stmt = stmt.join(
+        base_stmt = base_stmt.join(
             ProjectCustomerAssignment,
             ProjectCustomerAssignment.project_id == Project.id,
         ).where(ProjectCustomerAssignment.customer_code == code)
-    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    # 总数(过滤后,分页前) -- 写到响应 header,供前端做"上一页/下一页"分页 UI。
+    # 同时暴露 Access-Control-Expose-Headers 让浏览器跨域能读到这两个 header。
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Page"] = str(page)
+    response.headers["X-Page-Size"] = str(page_size)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Page, X-Page-Size"
+
+    stmt = (
+        base_stmt.order_by(SupplySource.provider, Supplier.name, Project.name)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     rows = (await db.execute(stmt)).all()
 
     codes_map = await _codes_by_project_ids(db, [r.id for r in rows])

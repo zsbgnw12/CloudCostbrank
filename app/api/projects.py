@@ -1,7 +1,7 @@
 """Projects CRUD + state transition API with status logging."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal, require_roles
@@ -54,6 +54,7 @@ def _to_read(project: Project, ss: SupplySource, su: Supplier) -> ProjectRead:
 
 @router.get("/", response_model=list[ProjectRead])
 async def list_projects(
+    response: Response,
     status: str | None = None,
     provider: str | None = None,
     page: int = Query(1, ge=1),
@@ -61,18 +62,26 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
     _: Principal = Depends(get_current_principal),
 ):
-    stmt = (
+    base = (
         select(Project, SupplySource, Supplier)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
         .where(Project.recycled_at.is_(None))
-        .order_by(Project.id)
     )
     if status:
-        stmt = stmt.where(Project.status == status)
+        base = base.where(Project.status == status)
     if provider:
-        stmt = stmt.where(SupplySource.provider == provider)
-    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+        base = base.where(SupplySource.provider == provider)
+
+    # 过滤后总数(分页前) → 写响应 header,前端读出做分页 UI
+    count_stmt = select(func.count()).select_from(base.subquery())
+    total = (await db.execute(count_stmt)).scalar_one()
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Page"] = str(page)
+    response.headers["X-Page-Size"] = str(page_size)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Page, X-Page-Size"
+
+    stmt = base.order_by(Project.id).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(stmt)
     return [_to_read(p, ss, su) for p, ss, su in result.all()]
 

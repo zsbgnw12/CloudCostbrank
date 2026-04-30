@@ -14,6 +14,12 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.alert import AlertRule, AlertHistory, Notification
 from app.models.billing import BillingData
+from app.models.project import Project
+from app.models.supply_source import SupplySource
+
+# 服务账号配额告警的固定触发百分比(产品规则:达到配额的 90% 即告警)。
+# 想做成可配置的话,把它挪到 alert_rules 加列存。
+ACCOUNT_QUOTA_TRIGGER_PCT = 0.9
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +50,8 @@ def check_all_alerts():
                     _check_monthly_budget(session, rule, today)
                 elif rule.threshold_type == "daily_increase_pct":
                     _check_daily_increase_pct(session, rule, yesterday)
+                elif rule.threshold_type == "account_count_quota":
+                    _check_account_count_quota(session, rule)
                 else:
                     actual_value = _evaluate_rule(session, rule, yesterday, today)
                     if actual_value is not None and actual_value >= rule.threshold_value:
@@ -84,6 +92,40 @@ def _check_daily_increase_pct(session: Session, rule: AlertRule, yesterday: dt.d
             f"昨日: ${curr_cost}, 前日: ${prev_cost}"
         )
         _trigger_alert(session, rule, Decimal(str(round(increase_pct, 2))), custom_message=message)
+
+
+def _check_account_count_quota(session: Session, rule: AlertRule):
+    """服务账号总量配额告警:已用账号数 ≥ 配额 × ACCOUNT_QUOTA_TRIGGER_PCT(默认 90%)时告警。
+
+    rule 字段含义约定(避免改 schema):
+      - threshold_value : 配额上限(如 100)
+      - target_type     : "account_count"(本检查器的 sentinel)
+      - target_id       : NULL / "all" → 全部 provider; "aws"/"gcp"/"azure"/"taiji" → 仅该云
+    """
+    quota = int(rule.threshold_value or 0)
+    if quota <= 0:
+        return
+
+    q = session.query(func.count(Project.id)).filter(Project.recycled_at.is_(None))
+    target_id = (rule.target_id or "").strip().lower()
+    if target_id and target_id != "all":
+        q = q.join(SupplySource, Project.supply_source_id == SupplySource.id).filter(
+            SupplySource.provider == target_id
+        )
+    used = int(q.scalar() or 0)
+    threshold_count = int(quota * ACCOUNT_QUOTA_TRIGGER_PCT)
+
+    if used < threshold_count:
+        return
+
+    pct = (used / quota * 100) if quota else 0
+    scope_desc = "全部" if not target_id or target_id == "all" else target_id.upper()
+    message = (
+        f"告警 [{rule.name}]: 服务账号配额预警!"
+        f"{scope_desc}范围内已使用 {used} 个,配额 {quota} 个 (使用率 {pct:.1f}%,"
+        f"触发阈值 {int(ACCOUNT_QUOTA_TRIGGER_PCT * 100)}%)"
+    )
+    _trigger_alert(session, rule, Decimal(str(used)), custom_message=message)
 
 
 def _get_daily_cost(session: Session, rule: AlertRule, day: dt.date) -> Decimal | None:
