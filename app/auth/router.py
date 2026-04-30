@@ -257,12 +257,16 @@ async def me(
 ):
     user = principal.user
     visible = await visible_cloud_account_ids(db, principal)
+    # 角色:取 token 里(Casdoor 实时)+ DB 里(admin SQL 配的,给机器应用用)的并集。
+    # 跟 dependencies.require_roles 的判断口径一致(那里也是 principal.roles | user.roles)。
+    # 之前只返回 user.roles 导致 Casdoor 已配角色的人类用户看到 me.roles=[]。
+    effective_roles = sorted(set(principal.roles or []) | set(user.roles or []))
     return CurrentUser(
         id=user.id,
         username=user.username,
         email=user.email,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
-        roles=list(user.roles or []),
+        roles=effective_roles,
         visible_cloud_account_ids=visible,
     )
