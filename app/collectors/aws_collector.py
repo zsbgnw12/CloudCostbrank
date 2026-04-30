@@ -143,6 +143,9 @@ class AWSCollector(BaseCollector):
             prefix = usage_type.split("-")[0]
             region = prefix.lower()
 
+        # invoice_month: 从 billed_date 推 YYYYMM(AWS 单日数据天然属于该日所在月发票)
+        invoice_month = billed_date.replace("-", "")[:6] if billed_date else None
+
         return {
             "date": billed_date,
             "project_id": account_id,
@@ -154,6 +157,13 @@ class AWSCollector(BaseCollector):
             "usage_quantity": usage_quantity,
             "usage_unit": usage_unit,
             "currency": "USD",
+            # cost_type: AWS Cost Explorer 已合并 tax/adjustment 到 cost,无独立维度,统一 'regular'
+            "cost_type": "regular",
+            # billing_account_id: AWS 12 位账号 ID 就是财务账户主键
+            "billing_account_id": account_id,
+            "invoice_month": invoice_month,
+            # AWS Cost Explorer 默认走 USD,无非 USD 计费场景;给 1.0 让聚合 SQL 用 cost_usd 时安全
+            "currency_conversion_rate": 1.0,
             "tags": {},
             "additional_info": {"service_raw": service_raw},
         }

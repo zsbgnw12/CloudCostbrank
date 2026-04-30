@@ -240,6 +240,26 @@ class AzureCollector(BaseCollector):
             "Pricing Model": str(row.get("pricingmodel", "") or ""),
         }
 
+        # billing_account_id: 优先用 BillingAccountId(EA / MCA 财务主键),
+        # 没有就退到 subscription_id —— 至少能保留单订阅的对账锚点。
+        billing_account = str(row.get("billingaccountid") or subscription_id or "") or None
+
+        # invoice_month YYYYMM: Azure CSV 有 BillingPeriodStartDate,优先用;
+        # 没有就从 billed_date 推。注意:跨月 backfill 时 billed_date 可能在新月、
+        # 但 invoice 仍是上月,所以要优先 BillingPeriodStartDate。
+        period_start = row.get("billingperiodstartdate")
+        period_date = AzureCollector._parse_date(period_start) if period_start else None
+        invoice_source = period_date or billed_date
+        invoice_month = invoice_source.replace("-", "")[:6] if invoice_source else None
+
+        # 汇率(本币 → USD):标准字段名 ExchangeRatePricingToBilling(从 pricing 转 billing),
+        # 部分导出版本叫 ExchangeRate;都没有就 1.0 兜底(USD 账号常见)。
+        exchange_rate = AzureCollector._to_float(
+            row.get("exchangeratepricingtobilling")
+            or row.get("exchangerate")
+            or 1.0
+        )
+
         return {
             "date": billed_date,
             "project_id": subscription_id or "Shared",
@@ -251,6 +271,11 @@ class AzureCollector(BaseCollector):
             "usage_quantity": usage_quantity,
             "usage_unit": usage_unit,
             "currency": str(row.get("billingcurrency", "USD") or "USD"),
+            # cost_type: Azure Cost Mgmt 已合并 tax/refund 到 cost,无独立维度,统一 'regular'
+            "cost_type": "regular",
+            "billing_account_id": billing_account,
+            "invoice_month": invoice_month,
+            "currency_conversion_rate": exchange_rate,
             "tags": tags,
             "additional_info": additional_info,
         }
