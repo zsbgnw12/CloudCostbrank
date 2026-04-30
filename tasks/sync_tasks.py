@@ -31,17 +31,17 @@ def _month_to_date_range(start_month: str, end_month: str | None = None):
     return start_date, end_date
 
 
-@celery_app.task(bind=True, max_retries=3, soft_time_limit=1800, time_limit=2400)
-def sync_data_source(self, data_source_id: int, start_month: str, end_month: str | None = None):
-    """Sync a single data source."""
+def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *, celery_task_id: str | None = None):
+    """Core sync logic — invoked by both month-range and date-range tasks.
+
+    Returns a result dict on success; raises on failure (caller wraps with retry).
+    """
     from app.services.crypto_service import decrypt_to_dict
     from app.collectors import get_collector
 
-    start_date, end_date = _month_to_date_range(start_month, end_month)
-
     log_id = None
     try:
-        log_id = create_sync_log(data_source_id, self.request.id, start_date, end_date)
+        log_id = create_sync_log(data_source_id, celery_task_id, start_date, end_date)
         update_data_source_sync_status(data_source_id, "running")
 
         from sqlalchemy.orm import Session
@@ -63,6 +63,24 @@ def sync_data_source(self, data_source_id: int, start_month: str, end_month: str
 
         collector = get_collector(provider)
         rows = collector.collect_billing(secret_data, config, start_date, end_date)
+
+        # 非 USD 计费早期警告:目前所有聚合都裸 SUM(cost),没乘 currency_conversion_rate。
+        # 所有数据源都 USD 时无影响;一旦接入 GBP/EUR/CNY 等会算错,此处先 warning 兜底。
+        try:
+            non_usd = [r for r in rows
+                       if r.get("currency") and r["currency"] != "USD"
+                       and (r.get("currency_conversion_rate") or 1) != 1]
+            if non_usd:
+                sample = non_usd[0]
+                logger.warning(
+                    "Non-USD billing detected ds=%d provider=%s currency=%s rate=%s rows=%d "
+                    "(cost values are local-currency; aggregations will be incorrect "
+                    "until cost_usd column is implemented)",
+                    data_source_id, provider, sample.get("currency"),
+                    sample.get("currency_conversion_rate"), len(non_usd),
+                )
+        except Exception:
+            pass
 
         # 把 dict/list 字段序列化成 JSON 字符串：COPY → JSONB 列要求双引号 JSON。
         # Python str(dict) 用单引号，PG 解析会失败，所以必须 json.dumps。
@@ -115,13 +133,37 @@ def sync_data_source(self, data_source_id: int, start_month: str, end_month: str
 
         complete_sync_log(log_id, records_fetched=len(rows), records_upserted=upserted)
         update_data_source_sync_status(data_source_id, "success")
-
         return {"data_source_id": data_source_id, "fetched": len(rows), "upserted": upserted}
 
     except Exception as exc:
         if log_id is not None:
-            complete_sync_log(log_id, records_fetched=0, records_upserted=0, error=str(exc))
-        update_data_source_sync_status(data_source_id, "failed")
+            try:
+                complete_sync_log(log_id, records_fetched=0, records_upserted=0, error=str(exc))
+            except Exception as _e:
+                logger.warning("complete_sync_log(failed) write failed: %s", _e)
+        try:
+            update_data_source_sync_status(data_source_id, "failed")
+        except Exception as _e:
+            logger.warning("update_data_source_sync_status(failed) write failed: %s", _e)
+        raise
+
+
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=1800, time_limit=2400)
+def sync_data_source(self, data_source_id: int, start_month: str, end_month: str | None = None):
+    """Sync a single data source by MONTH range (legacy API kept for /api/sync/{id})."""
+    start_date, end_date = _month_to_date_range(start_month, end_month)
+    try:
+        return _run_sync_core(data_source_id, start_date, end_date, celery_task_id=self.request.id)
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
+
+
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=1800, time_limit=2400)
+def sync_data_source_by_dates(self, data_source_id: int, start_date: str, end_date: str):
+    """Sync a single data source by explicit DATE range (YYYY-MM-DD)."""
+    try:
+        return _run_sync_core(data_source_id, start_date, end_date, celery_task_id=self.request.id)
+    except Exception as exc:
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
 
@@ -140,9 +182,34 @@ def sync_all(start_month: str, end_month: str | None = None, provider: str | Non
 
 @celery_app.task
 def sync_all_current_month():
-    """Beat wrapper: compute current month at runtime, then dispatch."""
+    """Beat wrapper (legacy): full current-month sync. Kept as on-demand task,
+    not on the daily schedule anymore — `sync_recent_days` does daily duty."""
     month = dt.date.today().strftime("%Y-%m")
     return sync_all(month)
+
+
+@celery_app.task
+def sync_recent_days(days: int = 7):
+    """Daily beat task: rolling window — sync [today - (days-1), today] for all
+    active data sources. Each calendar date ends up covered `days` consecutive
+    times, so any GCP/Azure backfill within `days` is captured. Cheaper than
+    full-month re-sync (BQ scan ≈ 4× less mid-month, ~30× less month-end)."""
+    end = dt.date.today()
+    start = end - dt.timedelta(days=max(days, 1) - 1)
+    sources = get_active_data_sources()
+    task_ids = []
+    for src in sources:
+        result = sync_data_source_by_dates.delay(
+            src["data_source_id"], start.isoformat(), end.isoformat()
+        )
+        task_ids.append(result.id)
+    logger.info("sync_recent_days dispatched %d tasks for window %s ~ %s",
+                len(task_ids), start, end)
+    return {
+        "dispatched": len(task_ids),
+        "window": f"{start} ~ {end}",
+        "task_ids": task_ids,
+    }
 
 
 @celery_app.task

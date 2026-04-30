@@ -27,8 +27,11 @@ celery_app.conf.update(
 
 celery_app.conf.beat_schedule = {
     "daily-sync": {
-        "task": "tasks.sync_tasks.sync_all_current_month",
+        # 每天 02:00 滚动同步最近 7 天(覆盖式 upsert,自然吞掉 GCP/Azure 的回填,跨月也丝滑)。
+        # 想跑整月: 走 /api/sync/all 或手动调 sync_all_current_month 任务。
+        "task": "tasks.sync_tasks.sync_recent_days",
         "schedule": crontab(hour=2, minute=0),
+        "kwargs": {"days": 7},
     },
     "daily-alert-check": {
         "task": "tasks.sync_tasks.check_alerts",
