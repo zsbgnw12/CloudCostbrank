@@ -196,7 +196,7 @@ def upsert_billing_rows(rows: list[dict]):
                     MAX(service_id) AS service_id,
                     MAX(sku_id) AS sku_id,
                     product, usage_type, region,
-                    cost_type,
+                    COALESCE(cost_type, 'regular') AS cost_type,
                     SUM(cost) AS cost,
                     SUM(cost_at_list) AS cost_at_list,
                     SUM(credits_total) AS credits_total,
@@ -216,7 +216,7 @@ def upsert_billing_rows(rows: list[dict]):
                     (ARRAY_AGG(system_labels ORDER BY cost DESC NULLS LAST))[1] AS system_labels,
                     (ARRAY_AGG(additional_info ORDER BY cost DESC))[1] AS additional_info
                 FROM _billing_staging
-                GROUP BY date, provider, data_source_id, project_id, product, usage_type, region, cost_type
+                GROUP BY date, provider, data_source_id, project_id, product, usage_type, region, COALESCE(cost_type, 'regular')
                 ON CONFLICT (date, data_source_id, project_id, product, usage_type, region, cost_type)
                 DO UPDATE SET
                     cost = EXCLUDED.cost,

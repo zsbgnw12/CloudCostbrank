@@ -87,6 +87,10 @@ def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *, celer
         for row in rows:
             row["data_source_id"] = data_source_id
             row["provider"] = provider
+            # cost_type:billing_summary 该列 NOT NULL,collector 没赋值时(AWS/Azure)
+            # 默认按 regular 入账,避免 COPY 后 NULL 触发 NotNullViolation。
+            if not row.get("cost_type"):
+                row["cost_type"] = "regular"
             # tags / additional_info：保留老行为 —— 空时写 "{}"（向后兼容已有数据形态）
             for f in ("tags", "additional_info"):
                 v = row.get(f)
