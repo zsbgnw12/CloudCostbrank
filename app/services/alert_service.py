@@ -52,6 +52,8 @@ def check_all_alerts():
                     _check_daily_increase_pct(session, rule, yesterday)
                 elif rule.threshold_type == "account_lifetime_quota":
                     _check_account_lifetime_quota(session, rule)
+                elif rule.threshold_type == "monthly_budget_multi":
+                    _check_monthly_budget_multi(session, rule, today)
                 else:
                     actual_value = _evaluate_rule(session, rule, yesterday, today)
                     if actual_value is not None and actual_value >= rule.threshold_value:
@@ -92,6 +94,50 @@ def _check_daily_increase_pct(session: Session, rule: AlertRule, yesterday: dt.d
             f"昨日: ${curr_cost}, 前日: ${prev_cost}"
         )
         _trigger_alert(session, rule, Decimal(str(round(increase_pct, 2))), custom_message=message)
+
+
+def _check_monthly_budget_multi(session: Session, rule: AlertRule, today: dt.date):
+    """多 project 月费用合计配额告警:
+    一组 project 的本月费用合计 ≥ 阈值 时触发。
+
+    rule 字段含义约定(避免改 schema):
+      - target_type     : "project_group"
+      - target_id       : 多个 project.external_project_id 用逗号分隔,如 "p1,p2,p3,p4"
+      - threshold_value : 该组 project 本月预算合计 USD
+
+    使用场景:客户买了 4 个 project 各 10k 预算,实际只用 2 个,
+    用单 project 月预算 monthly_budget 看不全;用此规则看 4 个合计是否超 40k。
+    """
+    quota = float(rule.threshold_value or 0)
+    if quota <= 0:
+        return
+    raw_ids = (rule.target_id or "").strip()
+    if not raw_ids:
+        return
+    project_ids = [p.strip() for p in raw_ids.split(",") if p.strip()]
+    if not project_ids:
+        return
+
+    month_start = today.replace(day=1)
+    month_end = today + dt.timedelta(days=1)
+
+    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+        BillingData.project_id.in_(project_ids),
+        BillingData.date >= month_start,
+        BillingData.date < month_end,
+    ).scalar() or Decimal("0")
+    used_f = float(used)
+
+    if used_f < quota:
+        return
+
+    pct = (used_f / quota * 100) if quota else 0
+    proj_desc = f"{len(project_ids)} 个项目({', '.join(project_ids[:3])}{'...' if len(project_ids) > 3 else ''})"
+    message = (
+        f"告警 [{rule.name}]: 多项目月费用合计超预算!"
+        f" {proj_desc} 本月累计 ${used_f:.2f},预算 ${quota:.2f} (使用率 {pct:.1f}%)"
+    )
+    _trigger_alert(session, rule, Decimal(str(round(used_f, 2))), custom_message=message)
 
 
 def _check_account_lifetime_quota(session: Session, rule: AlertRule):
