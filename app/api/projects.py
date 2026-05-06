@@ -4,8 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.dependencies import get_current_principal
 from app.auth.principal import Principal
+from app.auth.scope import (
+    ensure_provider_visible,
+    extract_providers_from_roles,
+    has_full_access,
+)
 from app.database import get_db
 from app.models.project import Project
 from app.models.project_assignment_log import ProjectAssignmentLog
@@ -60,7 +65,7 @@ async def list_projects(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     base = (
         select(Project, SupplySource, Supplier)
@@ -68,6 +73,14 @@ async def list_projects(
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
         .where(Project.recycled_at.is_(None))
     )
+    # 数据范围:cloud_<provider> 只看自己 provider 的;admin/ops 全量
+    if not has_full_access(principal):
+        scope_providers = extract_providers_from_roles(principal.roles)
+        if not scope_providers:
+            response.headers["X-Total-Count"] = "0"
+            response.headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Page, X-Page-Size"
+            return []
+        base = base.where(SupplySource.provider.in_(scope_providers))
     if status:
         base = base.where(Project.status == status)
     if provider:
@@ -90,11 +103,13 @@ async def list_projects(
 async def create_project(
     body: ProjectCreate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_admin")),
+    principal: Principal = Depends(get_current_principal),
 ):
     ss = await db.get(SupplySource, body.supply_source_id)
     if not ss:
         raise HTTPException(404, "货源不存在")
+    # 数据范围:用户必须能管该 supply_source 的 provider
+    ensure_provider_visible(principal, ss.provider)
     su = await db.get(Supplier, ss.supplier_id)
     if not su:
         raise HTTPException(500, "供应商数据异常")
@@ -107,12 +122,10 @@ async def create_project(
     return _to_read(project, ss, su)
 
 
-@router.get("/{project_id}", response_model=ProjectRead)
-async def get_project(
-    project_id: int,
-    db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
-):
+async def _load_project_with_scope(
+    db: AsyncSession, project_id: int, principal: Principal
+) -> tuple[Project, SupplySource, Supplier]:
+    """读取 project + 校验 provider 在用户范围内,返回三元组。"""
     row = await db.execute(
         select(Project, SupplySource, Supplier)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
@@ -123,6 +136,20 @@ async def get_project(
     if not t:
         raise HTTPException(404, "Project not found")
     project, ss, su = t
+    if not has_full_access(principal):
+        scope_providers = extract_providers_from_roles(principal.roles)
+        if ss.provider not in scope_providers:
+            raise HTTPException(403, f"Provider '{ss.provider}' out of scope")
+    return project, ss, su
+
+
+@router.get("/{project_id}", response_model=ProjectRead)
+async def get_project(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    project, ss, su = await _load_project_with_scope(db, project_id, principal)
     return _to_read(project, ss, su)
 
 
@@ -131,34 +158,23 @@ async def update_project(
     project_id: int,
     body: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_admin")),
+    principal: Principal = Depends(get_current_principal),
 ):
-    project = await db.get(Project, project_id)
-    if not project or project.recycled_at is not None:
-        raise HTTPException(404, "Project not found")
+    project, ss, su = await _load_project_with_scope(db, project_id, principal)
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(project, k, v)
     await db.commit()
     await db.refresh(project)
-    row = await db.execute(
-        select(Project, SupplySource, Supplier)
-        .join(SupplySource, Project.supply_source_id == SupplySource.id)
-        .join(Supplier, SupplySource.supplier_id == Supplier.id)
-        .where(Project.id == project_id)
-    )
-    p, ss, su = row.one()
-    return _to_read(p, ss, su)
+    return _to_read(project, ss, su)
 
 
 @router.post("/{project_id}/activate", response_model=ProjectRead)
 async def activate_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_admin")),
+    principal: Principal = Depends(get_current_principal),
 ):
-    project = await db.get(Project, project_id)
-    if not project or project.recycled_at is not None:
-        raise HTTPException(404, "Project not found")
+    project, ss, su = await _load_project_with_scope(db, project_id, principal)
     allowed_from, to_state = STATE_MACHINE["activate"]
     if project.status not in allowed_from:
         raise HTTPException(400, f"Cannot activate from '{project.status}'")
@@ -166,18 +182,17 @@ async def activate_project(
     project.status = to_state
     _add_log(db, project, "activate", old, to_state)
     await db.commit()
-    return await get_project(project_id, db)
+    await db.refresh(project)
+    return _to_read(project, ss, su)
 
 
 @router.post("/{project_id}/suspend", response_model=ProjectRead)
 async def suspend_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_admin")),
+    principal: Principal = Depends(get_current_principal),
 ):
-    project = await db.get(Project, project_id)
-    if not project or project.recycled_at is not None:
-        raise HTTPException(404, "Project not found")
+    project, ss, su = await _load_project_with_scope(db, project_id, principal)
     allowed_from, to_state = STATE_MACHINE["suspend"]
     if project.status not in allowed_from:
         raise HTTPException(400, f"Cannot suspend from '{project.status}'")
@@ -185,7 +200,8 @@ async def suspend_project(
     project.status = to_state
     _add_log(db, project, "suspend", old, to_state)
     await db.commit()
-    return await get_project(project_id, db)
+    await db.refresh(project)
+    return _to_read(project, ss, su)
 
 
 @router.get("/{project_id}/assignment-logs", response_model=list[ProjectAssignmentLogRead])

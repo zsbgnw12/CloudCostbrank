@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.dependencies import get_current_principal, require_cloud_role, require_roles
 from app.auth.principal import Principal
 from app.database import get_db
 from app.models.alert import AlertRule, AlertHistory, Notification
@@ -40,7 +40,7 @@ async def list_rules(
 async def create_rule(
     body: AlertRuleCreate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_ops")),
+    _: Principal = Depends(require_cloud_role()),
 ):
     rule = AlertRule(**body.model_dump())
     db.add(rule)
@@ -54,7 +54,7 @@ async def update_rule(
     rule_id: int,
     body: AlertRuleUpdate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_ops")),
+    _: Principal = Depends(require_cloud_role()),
 ):
     rule = await db.get(AlertRule, rule_id)
     if not rule:
@@ -70,7 +70,7 @@ async def update_rule(
 async def delete_rule(
     rule_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_ops")),
+    _: Principal = Depends(require_cloud_role()),
 ):
     rule = await db.get(AlertRule, rule_id)
     if not rule:

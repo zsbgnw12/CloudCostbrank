@@ -34,7 +34,7 @@ async def list_rates(
 async def create_rate(
     body: ExchangeRateCreate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_admin", "cloud_finance")),
+    _: Principal = Depends(require_roles("cloud_admin")),
 ):
     rate = ExchangeRate(**body.model_dump())
     db.add(rate)
@@ -48,7 +48,7 @@ async def update_rate(
     rate_id: int,
     body: ExchangeRateUpdate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_roles("cloud_admin", "cloud_finance")),
+    _: Principal = Depends(require_roles("cloud_admin")),
 ):
     rate = await db.get(ExchangeRate, rate_id)
     if not rate:

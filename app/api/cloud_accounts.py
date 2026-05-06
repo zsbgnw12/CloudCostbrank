@@ -4,9 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.dependencies import get_current_principal
 from app.auth.principal import Principal
-from app.auth.scope import ensure_cloud_account_visible, visible_cloud_account_ids
+from app.auth.scope import (
+    ensure_cloud_account_visible,
+    ensure_provider_visible,
+    visible_cloud_account_ids,
+)
 from app.database import get_db
 from app.models.cloud_account import CloudAccount
 from app.schemas.cloud_account import CloudAccountCreate, CloudAccountUpdate, CloudAccountRead
@@ -31,13 +35,14 @@ async def list_cloud_accounts(
     return result.scalars().all()
 
 
-@router.post("/", response_model=CloudAccountRead, status_code=201,
-             dependencies=[Depends(require_roles("cloud_admin"))])
+@router.post("/", response_model=CloudAccountRead, status_code=201)
 async def create_cloud_account(
     body: CloudAccountCreate,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
+    # 限定:用户的角色必须能管该 provider(cloud_admin/ops 全开,cloud_<p> 限本云)
+    ensure_provider_visible(principal, body.provider)
     encrypted = encrypt_dict(body.secret_data)
     account = CloudAccount(
         name=body.name,
@@ -69,14 +74,14 @@ async def get_cloud_account(
     return account
 
 
-@router.put("/{account_id}", response_model=CloudAccountRead,
-            dependencies=[Depends(require_roles("cloud_admin"))])
+@router.put("/{account_id}", response_model=CloudAccountRead)
 async def update_cloud_account(
     account_id: int,
     body: CloudAccountUpdate,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
+    await ensure_cloud_account_visible(db, principal, account_id)
     account = await db.get(CloudAccount, account_id)
     if not account:
         raise HTTPException(404, "Cloud account not found")
@@ -97,13 +102,13 @@ async def update_cloud_account(
     return account
 
 
-@router.delete("/{account_id}", status_code=204,
-               dependencies=[Depends(require_roles("cloud_admin"))])
+@router.delete("/{account_id}", status_code=204)
 async def delete_cloud_account(
     account_id: int,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
+    await ensure_cloud_account_visible(db, principal, account_id)
     account = await db.get(CloudAccount, account_id)
     if not account:
         raise HTTPException(404, "Cloud account not found")

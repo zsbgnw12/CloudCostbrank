@@ -3,13 +3,15 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.dependencies import get_current_principal
 from app.auth.principal import Principal
 from app.auth.scope import visible_data_source_ids
 from app.database import get_db
 from app.services import dashboard_service
 
-router = APIRouter(dependencies=[Depends(require_roles("cloud_viewer", "cloud_ops", "cloud_finance"))])
+# router 级"是否云管角色"由 main.py 的 _cloud("dashboard") 完成;
+# 数据范围由各 endpoint 内部用 visible_data_source_ids 限定。
+router = APIRouter()
 
 
 async def _scope(db: AsyncSession, principal: Principal) -> list[int] | None:

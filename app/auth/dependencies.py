@@ -55,6 +55,32 @@ def require_roles(*roles: str):
     return _dep
 
 
+def require_cloud_role():
+    """放行任何"云管角色":cloud_admin / cloud_ops / cloud_<provider>。
+
+    通过命名约定自动识别 cloud_<provider>(aws/gcp/azure/taiji 以及未来阿里
+    甲骨文等),不写死 provider 清单 — 加新云只需 Casdoor 后台建角色,
+    本函数不用改。
+
+    注意:此 dependency 只校验"是否是云管角色",不限 provider 范围。
+    具体数据范围由 scope.visible_cloud_account_ids / ensure_provider_visible
+    在路由内部进一步限定。
+    """
+    from app.auth.scope import has_full_access, extract_providers_from_roles
+
+    def _dep(principal: Principal = Depends(get_current_principal)) -> Principal:
+        if has_full_access(principal):
+            return principal
+        if extract_providers_from_roles(principal.roles):
+            return principal
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: cloud role required (cloud_admin / cloud_ops / cloud_<provider>)",
+        )
+
+    return _dep
+
+
 def require_module(module: str):
     """Dependency: reject if the module is globally disabled, OR if this
     principal is an API key that doesn't list this module in `allowed_modules`.

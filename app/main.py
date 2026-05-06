@@ -35,7 +35,7 @@ from app.api import (
 )
 from app.auth import router as auth_router_module
 from app.auth.middleware import AuthMiddleware
-from app.auth.dependencies import require_module, require_roles
+from app.auth.dependencies import require_module, require_roles, require_cloud_role
 
 logger = logging.getLogger(__name__)
 
@@ -125,34 +125,50 @@ app.include_router(api_permissions.router, prefix="/api/api-permissions", tags=[
 app.include_router(api_keys.router, prefix="/api/api-keys", tags=["API Keys"])
 
 
-# ---------- Business routers (gated by ApiModulePermission) ----------
+# ---------- Business routers (gated by ApiModulePermission + cloud role) ----------
 def _m(module: str):
     """Attach module switch gate as router-level dependency."""
     return [Depends(require_module(module))]
 
 
-app.include_router(dashboard.router,        prefix="/api/dashboard",        tags=["Dashboard"],         dependencies=_m("dashboard"))
-app.include_router(categories.router,       prefix="/api/categories",       tags=["Categories"],        dependencies=_m("categories"))
-app.include_router(cloud_accounts.router,   prefix="/api/cloud-accounts",   tags=["Cloud Accounts"],    dependencies=_m("cloud_accounts"))
-app.include_router(data_sources.router,     prefix="/api/data-sources",     tags=["Data Sources"],      dependencies=_m("data_sources"))
-app.include_router(projects.router,         prefix="/api/projects",         tags=["Projects"],          dependencies=_m("projects"))
-app.include_router(billing.router,          prefix="/api/billing",          tags=["Billing"],           dependencies=_m("billing"))
-app.include_router(sync.router,             prefix="/api/sync",             tags=["Sync"],              dependencies=_m("sync"))
-app.include_router(resources.router,        prefix="/api/resources",        tags=["Resources"],         dependencies=_m("resources"))
-app.include_router(alerts.router,           prefix="/api/alerts",           tags=["Alerts"],            dependencies=_m("alerts"))
-app.include_router(bills.router,            prefix="/api/bills",            tags=["Monthly Bills"],     dependencies=_m("bills"))
-app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags=["Exchange Rates"],    dependencies=_m("exchange_rates"))
-app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_m("suppliers"))
-# service_accounts: 路由级只留模块开关；敏感端点在 service_accounts.py 里逐条加 cloud_admin。
-app.include_router(service_accounts.router, prefix="/api/service-accounts", tags=["Service Accounts"],  dependencies=_m("service_accounts"))
-# Azure 相关路由开放给 cloud_admin + cloud_ops（两个 router 内部均无 DELETE 端点；
-# execute/plan 等会产生云资源的操作属于"创建/编辑"，按 ops 规则放开，误操作风险由审计兜底）：
+def _cloud(module: str):
+    """Module gate + 任何"云管角色"(cloud_admin / cloud_ops / cloud_<provider>)。
 
+    数据范围限定由各 endpoint 内部用 visible_cloud_account_ids /
+    ensure_provider_visible 实现。这一层只做"是不是云管成员"的粗筛。
+    """
+    return _m(module) + [Depends(require_cloud_role())]
+
+
+def _admin(module: str):
+    """Module gate + 仅 cloud_admin 可调(系统管理 / 全局元数据)。"""
+    return _m(module) + [Depends(require_roles("cloud_admin"))]
+
+
+# ── 任何云管角色都能进的业务路由(数据范围由 endpoint 内部限定到自己的 provider)
+app.include_router(dashboard.router,        prefix="/api/dashboard",        tags=["Dashboard"],         dependencies=_cloud("dashboard"))
+app.include_router(cloud_accounts.router,   prefix="/api/cloud-accounts",   tags=["Cloud Accounts"],    dependencies=_cloud("cloud_accounts"))
+app.include_router(data_sources.router,     prefix="/api/data-sources",     tags=["Data Sources"],      dependencies=_cloud("data_sources"))
+app.include_router(projects.router,         prefix="/api/projects",         tags=["Projects"],          dependencies=_cloud("projects"))
+app.include_router(billing.router,          prefix="/api/billing",          tags=["Billing"],           dependencies=_cloud("billing"))
+app.include_router(sync.router,             prefix="/api/sync",             tags=["Sync"],              dependencies=_cloud("sync"))
+app.include_router(resources.router,        prefix="/api/resources",        tags=["Resources"],         dependencies=_cloud("resources"))
+app.include_router(alerts.router,           prefix="/api/alerts",           tags=["Alerts"],            dependencies=_cloud("alerts"))
+app.include_router(bills.router,            prefix="/api/bills",            tags=["Monthly Bills"],     dependencies=_cloud("bills"))
+app.include_router(service_accounts.router, prefix="/api/service-accounts", tags=["Service Accounts"],  dependencies=_cloud("service_accounts"))
+app.include_router(metering.router,         prefix="/api/metering",         tags=["Metering"],          dependencies=_cloud("metering"))
+
+# ── 全局元数据 / 跨云配置 — 仅 cloud_admin
+app.include_router(categories.router,       prefix="/api/categories",       tags=["Categories"],        dependencies=_admin("categories"))
+app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_admin("suppliers"))
+app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags=["Exchange Rates"],    dependencies=_admin("exchange_rates"))
+
+# ── Azure 部署 / 跨租户授权 — admin + ops(执行类 ops 也允许;按云的 cloud_<p> 不开,
+# 因为 azure_deploy 内部有跨订阅的批量动作,需要广义运维权限)
 app.include_router(azure_deploy.router,     prefix="/api/azure-deploy",     tags=["Azure Deploy"],      dependencies=_m("azure_deploy") + [Depends(require_roles("cloud_admin", "cloud_ops"))])
 app.include_router(azure_consent.router,    prefix="/api/azure-consent",    tags=["Azure Consent"],     dependencies=_m("azure_consent") + [Depends(require_roles("cloud_admin", "cloud_ops"))])
 # Consent callback — public (no auth), customer browser lands here after Microsoft redirect
 app.include_router(azure_consent.callback_router, prefix="/api/azure-consent", tags=["Azure Consent Callback"])
-app.include_router(metering.router,         prefix="/api/metering",         tags=["Metering"],          dependencies=_m("metering"))
 
 
 @app.get("/api/health")

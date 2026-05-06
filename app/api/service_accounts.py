@@ -14,7 +14,13 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.principal import Principal
+from app.auth.scope import (
+    ensure_provider_visible,
+    extract_providers_from_roles,
+    has_full_access,
+)
 from app.database import get_db
 from app.models.billing import BillingData
 from app.models.cloud_account import CloudAccount
@@ -302,6 +308,36 @@ def _principal_operator(request) -> str | None:
 
 # ─── Endpoints ─────────────────────────────────────────────────
 
+async def _scope_check_account(db: AsyncSession, principal: Principal, account_id: int) -> None:
+    """写操作前校验:account 所属 provider 必须在用户范围内。
+    cloud_admin / cloud_ops 全开;cloud_<provider> 限本云。"""
+    if has_full_access(principal):
+        return
+    scope_providers = extract_providers_from_roles(principal.roles)
+    if not scope_providers:
+        raise HTTPException(403, "Forbidden: cloud role required")
+    row = await db.execute(
+        select(SupplySource.provider)
+        .join(Project, Project.supply_source_id == SupplySource.id)
+        .where(Project.id == account_id)
+    )
+    p = row.scalar_one_or_none()
+    if p is None:
+        raise HTTPException(404, "Service account not found")
+    if p not in scope_providers:
+        raise HTTPException(403, f"Provider '{p}' out of scope")
+
+
+async def _account_in_scope(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> int:
+    """Dependency: 路由路径含 {account_id} 时自动校验数据范围。"""
+    await _scope_check_account(db, principal, account_id)
+    return account_id
+
+
 @router.get("/", response_model=list[ServiceAccountListItem])
 async def list_accounts(
     response: Response,
@@ -311,6 +347,7 @@ async def list_accounts(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     base_stmt = (
         select(
@@ -328,6 +365,14 @@ async def list_accounts(
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
         .where(Project.recycled_at.is_(None))
     )
+    # 数据范围:cloud_<provider> 只看本云
+    if not has_full_access(principal):
+        scope_providers = extract_providers_from_roles(principal.roles)
+        if not scope_providers:
+            response.headers["X-Total-Count"] = "0"
+            response.headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Page, X-Page-Size"
+            return []
+        base_stmt = base_stmt.where(SupplySource.provider.in_(scope_providers))
     if provider:
         base_stmt = base_stmt.where(SupplySource.provider == provider)
     if status:
@@ -377,13 +422,18 @@ async def list_accounts(
     "/",
     response_model=ServiceAccountListItem,
     status_code=201,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
 )
-async def create_account(body: ServiceAccountCreate, db: AsyncSession = Depends(get_db)):
+async def create_account(
+    body: ServiceAccountCreate,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
     ss = await db.get(SupplySource, body.supply_source_id)
     if not ss:
         raise HTTPException(404, "货源不存在")
     cloud = ss.provider
+    # 数据范围:用户的角色必须能管该 supply_source 的 provider
+    ensure_provider_visible(principal, cloud)
 
     encrypted = encrypt_dict(body.secret_data) if body.secret_data else encrypt_dict({})
     ca = CloudAccount(name=f"{cloud}-{body.name}", provider=cloud, secret_data=encrypted)
@@ -646,7 +696,7 @@ async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
 @router.put(
     "/{account_id}",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def update_account(
     account_id: int,
@@ -790,7 +840,7 @@ class BulkAssignResponse(BaseModel):
 @router.post(
     "/bulk-assign",
     response_model=BulkAssignResponse,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def bulk_assign(body: BulkAssignRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -867,7 +917,7 @@ async def bulk_assign(body: BulkAssignRequest, db: AsyncSession = Depends(get_db
 @router.post(
     "/{account_id}/suspend",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def suspend_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """人工停用。允许从使用中 / 备用切到停用。"""
@@ -890,7 +940,7 @@ async def suspend_account(account_id: int, request: Request, db: AsyncSession = 
 @router.post(
     "/{account_id}/activate",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def activate_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """人工置为使用中。允许从备用 / 停用切到使用中。和客户编号无关。"""
@@ -912,7 +962,7 @@ async def activate_account(account_id: int, request: Request, db: AsyncSession =
 @router.post(
     "/{account_id}/standby",
     response_model=ServiceAccountDetail,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def standby_account(account_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """人工置为备用。允许从使用中 / 停用切到备用。和客户编号无关。"""
@@ -936,7 +986,7 @@ async def standby_account(account_id: int, request: Request, db: AsyncSession = 
 @router.post(
     "/customer-assignments/sync",
     response_model=SalesSyncResult,
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def sync_customer_assignments(
     body: SalesSyncBody,
@@ -1181,7 +1231,7 @@ async def get_costs(
 
 @router.get(
     "/{account_id}/credentials",
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def get_credentials(account_id: int, db: AsyncSession = Depends(get_db)):
     project = await _get_active_project(db, account_id)
@@ -1390,7 +1440,7 @@ def _build_excel(
 
 @router.post(
     "/discover-gcp-projects",
-    dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))],
+    dependencies=[Depends(_account_in_scope)],
 )
 async def discover_gcp_projects(db: AsyncSession = Depends(get_db)):
     """为账单中存在但未建档的 GCP project 创建 Project，挂在系统供应商「未分配资源组」的 GCP 货源下。"""
