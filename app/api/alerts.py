@@ -6,6 +6,78 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, case, delete, update
+
+from app.auth.scope import (
+    extract_providers_from_roles,
+    has_full_access,
+)
+from app.models.project import Project
+from app.models.supply_source import SupplySource
+
+
+async def _ensure_rule_target_in_scope(
+    db: AsyncSession, principal, target_type: str | None, target_id: str | None
+) -> None:
+    """校验告警规则的 target 必须在用户 provider 范围内。
+    target_id 是单个 external_project_id 或逗号分隔列表(monthly_budget_multi)。
+    """
+    if has_full_access(principal):
+        return
+    if not target_id:
+        return  # 全局规则,所有云管都可以创建
+    ids = [p.strip() for p in target_id.split(",") if p.strip()]
+    if not ids:
+        return
+    rows = (
+        await db.execute(
+            select(SupplySource.provider)
+            .distinct()
+            .join(Project, Project.supply_source_id == SupplySource.id)
+            .where(Project.external_project_id.in_(ids))
+        )
+    ).scalars().all()
+    target_providers = set(rows)
+    user_providers = set(extract_providers_from_roles(principal.roles))
+    out = target_providers - user_providers
+    if out:
+        raise HTTPException(
+            403, f"Target provider(s) out of scope: {sorted(out)} (you can manage: {sorted(user_providers)})"
+        )
+
+
+async def _visible_rule_ids(db: AsyncSession, principal) -> list[int] | None:
+    """返回该 principal 可见的 alert_rule.id 列表。None 表示全量(admin/ops)。
+
+    可见规则:
+      - 全局规则(target_id 为空):所有云管都可看
+      - 单 / 多 project 规则:任一 target project 的 provider 在用户范围内 → 可看
+    """
+    if has_full_access(principal):
+        return None
+    user_providers = set(extract_providers_from_roles(principal.roles))
+    if not user_providers:
+        return []
+    all_rules = (await db.execute(select(AlertRule))).scalars().all()
+    visible: list[int] = []
+    for r in all_rules:
+        if not r.target_id:
+            visible.append(r.id)
+            continue
+        ids = [p.strip() for p in r.target_id.split(",") if p.strip()]
+        if not ids:
+            visible.append(r.id)
+            continue
+        provs = (
+            await db.execute(
+                select(SupplySource.provider)
+                .distinct()
+                .join(Project, Project.supply_source_id == SupplySource.id)
+                .where(Project.external_project_id.in_(ids))
+            )
+        ).scalars().all()
+        if set(provs) & user_providers:
+            visible.append(r.id)
+    return visible
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal, require_cloud_role, require_roles
@@ -30,9 +102,15 @@ router = APIRouter()
 @router.get("/rules/", response_model=list[AlertRuleRead])
 async def list_rules(
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
-    result = await db.execute(select(AlertRule).order_by(AlertRule.id))
+    stmt = select(AlertRule).order_by(AlertRule.id)
+    visible = await _visible_rule_ids(db, principal)
+    if visible is not None:
+        if not visible:
+            return []
+        stmt = stmt.where(AlertRule.id.in_(visible))
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 
@@ -40,8 +118,10 @@ async def list_rules(
 async def create_rule(
     body: AlertRuleCreate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_cloud_role()),
+    principal: Principal = Depends(require_cloud_role()),
 ):
+    # 校验 target provider 在用户范围内
+    await _ensure_rule_target_in_scope(db, principal, body.target_type, body.target_id)
     rule = AlertRule(**body.model_dump())
     db.add(rule)
     await db.commit()
@@ -54,12 +134,20 @@ async def update_rule(
     rule_id: int,
     body: AlertRuleUpdate,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_cloud_role()),
+    principal: Principal = Depends(require_cloud_role()),
 ):
     rule = await db.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
-    for k, v in body.model_dump(exclude_unset=True).items():
+    # 防越权:先校验现有 rule 的 target 在用户范围(防修改别人范围的 rule)
+    await _ensure_rule_target_in_scope(db, principal, rule.target_type, rule.target_id)
+    # 如果改了 target,新 target 也要在用户范围
+    changes = body.model_dump(exclude_unset=True)
+    new_target = changes.get("target_id", rule.target_id)
+    new_type = changes.get("target_type", rule.target_type)
+    if "target_id" in changes or "target_type" in changes:
+        await _ensure_rule_target_in_scope(db, principal, new_type, new_target)
+    for k, v in changes.items():
         setattr(rule, k, v)
     await db.commit()
     await db.refresh(rule)
@@ -70,7 +158,7 @@ async def update_rule(
 async def delete_rule(
     rule_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(require_cloud_role()),
+    principal: Principal = Depends(require_cloud_role()),
 ):
     """删除告警规则。FK 依赖链:Notification → AlertHistory → AlertRule。
     schema 没设 ondelete CASCADE,所以接口里手工按链清理:
@@ -82,6 +170,8 @@ async def delete_rule(
     rule = await db.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
+    # 防越权:cloud_<provider> 用户只能删自己范围内的 rule
+    await _ensure_rule_target_in_scope(db, principal, rule.target_type, rule.target_id)
 
     # 先收集该 rule 关联的所有 history id
     hist_ids = list(
@@ -110,11 +200,17 @@ async def alert_history(
     rule_id: int | None = None,
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = select(AlertHistory).order_by(AlertHistory.id.desc()).limit(limit)
     if rule_id:
         stmt = stmt.where(AlertHistory.rule_id == rule_id)
+    # 数据范围过滤:cloud_<provider> 只看自己 visible rule 的 history
+    visible_rule_ids = await _visible_rule_ids(db, principal)
+    if visible_rule_ids is not None:
+        if not visible_rule_ids:
+            return []
+        stmt = stmt.where(AlertHistory.rule_id.in_(visible_rule_ids))
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -233,7 +329,7 @@ class RuleStatus(BaseModel):
 async def rule_status(
     month: str = Query(None, description="YYYY-MM, defaults to current month"),
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     """Return progress status for ALL active rules.
 
@@ -254,13 +350,17 @@ async def rule_status(
     yesterday = dt.date.today() - dt.timedelta(days=1)
 
     # 拉所有 active 规则(不再限 target_type='project',否则丢 multi 等新类型)
-    rules_result = await db.execute(
-        select(AlertRule).where(
-            AlertRule.is_active.is_(True),
-            AlertRule.target_id.isnot(None),
-        )
+    rules_stmt = select(AlertRule).where(
+        AlertRule.is_active.is_(True),
+        AlertRule.target_id.isnot(None),
     )
-    rules = rules_result.scalars().all()
+    # 数据范围:cloud_<provider> 用户只看自己 visible rule
+    visible_rule_ids = await _visible_rule_ids(db, principal)
+    if visible_rule_ids is not None:
+        if not visible_rule_ids:
+            return []
+        rules_stmt = rules_stmt.where(AlertRule.id.in_(visible_rule_ids))
+    rules = (await db.execute(rules_stmt)).scalars().all()
     if not rules:
         return []
 
