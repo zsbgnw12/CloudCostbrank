@@ -163,10 +163,10 @@ app.include_router(categories.router,       prefix="/api/categories",       tags
 app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_admin("suppliers"))
 app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags=["Exchange Rates"],    dependencies=_admin("exchange_rates"))
 
-# ── Azure 部署 / 跨租户授权 — admin + ops(执行类 ops 也允许;按云的 cloud_<p> 不开,
-# 因为 azure_deploy 内部有跨订阅的批量动作,需要广义运维权限)
-app.include_router(azure_deploy.router,     prefix="/api/azure-deploy",     tags=["Azure Deploy"],      dependencies=_m("azure_deploy") + [Depends(require_roles("cloud_admin", "cloud_ops"))])
-app.include_router(azure_consent.router,    prefix="/api/azure-consent",    tags=["Azure Consent"],     dependencies=_m("azure_consent") + [Depends(require_roles("cloud_admin", "cloud_ops"))])
+# ── Azure 部署 / 跨租户授权 — admin + ops + cloud_azure(Azure 专属功能,该云运维理应能用)
+# cloud_aws / cloud_gcp / cloud_taiji 故意不放(Azure 跟他们无关)
+app.include_router(azure_deploy.router,     prefix="/api/azure-deploy",     tags=["Azure Deploy"],      dependencies=_m("azure_deploy") + [Depends(require_roles("cloud_admin", "cloud_ops", "cloud_azure"))])
+app.include_router(azure_consent.router,    prefix="/api/azure-consent",    tags=["Azure Consent"],     dependencies=_m("azure_consent") + [Depends(require_roles("cloud_admin", "cloud_ops", "cloud_azure"))])
 # Consent callback — public (no auth), customer browser lands here after Microsoft redirect
 app.include_router(azure_consent.callback_router, prefix="/api/azure-consent", tags=["Azure Consent Callback"])
 
