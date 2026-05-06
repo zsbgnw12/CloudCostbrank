@@ -1,6 +1,8 @@
 """/api/auth/* — Casdoor SSO + local JWT lifecycle."""
 
+import base64
 import hashlib
+import hmac
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -26,27 +28,42 @@ from app.schemas.auth import CurrentUser, LoginUrlResponse, TokenPair
 router = APIRouter()
 
 
-# In-process state store for OAuth CSRF protection. For multi-instance deployments
-# swap with Redis — kept in-memory here to avoid a new dep for the reference impl.
-_state_store: dict[str, float] = {}
+# Stateless OAuth state: HMAC-signed `<nonce>.<ts>.<sig>`. 不依赖内存,
+# 容器重启 / 多实例 / 横向扩缩 都不会再丢 state。
 _STATE_TTL = 600  # 10 min
 
 
+def _state_secret() -> bytes:
+    return settings.CC_JWT_SECRET.encode("utf-8")
+
+
+def _b64u(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
+
+
 def _put_state() -> str:
-    now = datetime.now(timezone.utc).timestamp()
-    # purge stale
-    expired = [k for k, v in _state_store.items() if v + _STATE_TTL < now]
-    for k in expired:
-        _state_store.pop(k, None)
-    state = secrets.token_urlsafe(24)
-    _state_store[state] = now
-    return state
+    nonce = _b64u(secrets.token_bytes(18))
+    ts = str(int(datetime.now(timezone.utc).timestamp()))
+    msg = f"{nonce}.{ts}".encode("ascii")
+    sig = _b64u(hmac.new(_state_secret(), msg, hashlib.sha256).digest())
+    return f"{nonce}.{ts}.{sig}"
 
 
 def _check_state(state: str) -> bool:
-    now = datetime.now(timezone.utc).timestamp()
-    ts = _state_store.pop(state, None)
-    return ts is not None and ts + _STATE_TTL >= now
+    try:
+        nonce, ts_str, sig = state.split(".")
+    except ValueError:
+        return False
+    msg = f"{nonce}.{ts_str}".encode("ascii")
+    expected = _b64u(hmac.new(_state_secret(), msg, hashlib.sha256).digest())
+    if not hmac.compare_digest(expected, sig):
+        return False
+    try:
+        ts = int(ts_str)
+    except ValueError:
+        return False
+    now = int(datetime.now(timezone.utc).timestamp())
+    return 0 <= now - ts <= _STATE_TTL
 
 
 def _set_cookies(response: Response, access_token: str, refresh_token: str, access_ttl: int, refresh_ttl: int) -> None:
