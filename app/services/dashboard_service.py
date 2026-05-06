@@ -154,10 +154,35 @@ async def get_overview(db: AsyncSession, month: str, visible_ds: list[int] | Non
     mom = float((total_cost - prev_month_cost) / prev_month_cost * 100) \
         if prev_month_cost and prev_month_cost > 0 else 0.0
 
-    res_p = await db.execute(
-        select(func.count()).select_from(Project).where(Project.status == "active")
+    # active_projects 也按数据范围过滤(之前一直是全量,导致 cloud_<provider> 用户
+    # 在 overview 看到的 active_projects 跟 admin 一样)
+    proj_stmt = (
+        select(func.count())
+        .select_from(Project)
+        .join(SupplySource, Project.supply_source_id == SupplySource.id)
+        .where(Project.status == "active", Project.recycled_at.is_(None))
     )
-    active_projects = res_p.scalar_one()
+    if visible_ds is not None:
+        if not visible_ds:
+            active_projects = 0
+        else:
+            # visible_ds 是 data_source_id 列表;反查它们对应的 cloud_account → provider
+            ca_stmt = select(DataSource.cloud_account_id).where(DataSource.id.in_(visible_ds))
+            ca_ids = list((await db.execute(ca_stmt)).scalars().all())
+            if not ca_ids:
+                active_projects = 0
+            else:
+                # provider = cloud_accounts.provider where id IN (ca_ids)
+                from app.models.cloud_account import CloudAccount
+                prov_stmt = select(CloudAccount.provider).where(CloudAccount.id.in_(ca_ids))
+                providers = list({p for p in (await db.execute(prov_stmt)).scalars().all()})
+                if not providers:
+                    active_projects = 0
+                else:
+                    proj_stmt = proj_stmt.where(SupplySource.provider.in_(providers))
+                    active_projects = (await db.execute(proj_stmt)).scalar_one()
+    else:
+        active_projects = (await db.execute(proj_stmt)).scalar_one()
 
     result = {
         "total_cost": total_cost,
