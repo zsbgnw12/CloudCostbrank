@@ -230,6 +230,39 @@ async def revoke_invite(invite_id: int, db: AsyncSession = Depends(get_db)):
     return {"ok": True, "message": "邀请已作废"}
 
 
+@router.delete("/invites/{invite_id}", status_code=204)
+async def delete_invite(invite_id: int, db: AsyncSession = Depends(get_db)):
+    """彻底删除邀请记录(从历史日志中移除)。"""
+    invite = await db.get(AzureConsentInvite, invite_id)
+    if not invite:
+        raise HTTPException(404, "Invite not found")
+    await log_operation(
+        db, action="delete_consent_invite", target_type="azure_consent_invite",
+        target_id=invite.id,
+        before_data={"customer_label": invite.customer_label, "status": invite.status},
+    )
+    await db.delete(invite)
+
+
+@router.delete("/invites", status_code=204)
+async def delete_invites_bulk(
+    only_status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """批量清理邀请记录。only_status 可指定 expired / consumed / pending,留空清全部。"""
+    from sqlalchemy import select
+    stmt = select(AzureConsentInvite)
+    if only_status:
+        stmt = stmt.where(AzureConsentInvite.status == only_status)
+    rows = (await db.execute(stmt)).scalars().all()
+    for inv in rows:
+        await db.delete(inv)
+    await log_operation(
+        db, action="bulk_delete_consent_invites", target_type="azure_consent_invite",
+        target_id=0, after_data={"deleted": len(rows), "filter": only_status or "all"},
+    )
+
+
 # ─── legacy register (kept for rollback) ───────────────────────────────
 
 @router.post("/register", response_model=CloudAccountRead, status_code=201)
