@@ -12,11 +12,11 @@ from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
 from app.services.default_supply_sources import RESERVED_UNASSIGNED_SUPPLIER_NAME
 
-# 权限约定：
-#   - 查看 / 创建 / 编辑：cloud_admin + cloud_ops（运营人员日常工作）
-#   - 删除：仅 cloud_admin（防止 ops 误删业务配置）
-# router 级默认放给 ops+admin；DELETE 端点单独加 require_roles("cloud_admin") 覆盖。
-router = APIRouter(dependencies=[Depends(require_roles("cloud_admin", "cloud_ops"))])
+# 权限约定（router 级不锁,由 main.py 的 _cloud("suppliers") 拦截到云管角色,
+# 这里只对写操作单独加 admin 锁:供应商和货源是跨云的全局元数据,创建删除影响所有云的归口,只 admin 可改）：
+#   - GET 列表/详情:任何云管角色(给前端"添加云账号"对话框的下拉选项用)
+#   - POST/PATCH/DELETE:仅 cloud_admin
+router = APIRouter()
 
 
 class SupplierRead(BaseModel):
@@ -52,7 +52,8 @@ async def list_suppliers(db: AsyncSession = Depends(get_db)):
     return list(r.scalars().all())
 
 
-@router.post("/", response_model=SupplierRead, status_code=201)
+@router.post("/", response_model=SupplierRead, status_code=201,
+             dependencies=[Depends(require_roles("cloud_admin"))])
 async def create_supplier(body: SupplierCreate, db: AsyncSession = Depends(get_db)):
     name = body.name.strip()
     if not name:
@@ -70,7 +71,8 @@ async def create_supplier(body: SupplierCreate, db: AsyncSession = Depends(get_d
     return su
 
 
-@router.patch("/{supplier_id}", response_model=SupplierRead)
+@router.patch("/{supplier_id}", response_model=SupplierRead,
+              dependencies=[Depends(require_roles("cloud_admin"))])
 async def update_supplier(supplier_id: int, body: SupplierUpdate, db: AsyncSession = Depends(get_db)):
     s = await db.get(Supplier, supplier_id)
     if not s:
@@ -142,7 +144,8 @@ async def list_supply_sources(supplier_id: int, db: AsyncSession = Depends(get_d
     return sorted(out, key=lambda x: x.provider)
 
 
-@router.post("/{supplier_id}/supply-sources", response_model=SupplySourceRead, status_code=201)
+@router.post("/{supplier_id}/supply-sources", response_model=SupplySourceRead, status_code=201,
+             dependencies=[Depends(require_roles("cloud_admin"))])
 async def create_supply_source(supplier_id: int, body: SupplySourceCreate, db: AsyncSession = Depends(get_db)):
     s = await db.get(Supplier, supplier_id)
     if not s:

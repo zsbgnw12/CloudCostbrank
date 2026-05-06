@@ -158,10 +158,12 @@ app.include_router(bills.router,            prefix="/api/bills",            tags
 app.include_router(service_accounts.router, prefix="/api/service-accounts", tags=["Service Accounts"],  dependencies=_cloud("service_accounts"))
 app.include_router(metering.router,         prefix="/api/metering",         tags=["Metering"],          dependencies=_cloud("metering"))
 
-# ── 全局元数据 / 跨云配置 — 仅 cloud_admin
-app.include_router(categories.router,       prefix="/api/categories",       tags=["Categories"],        dependencies=_admin("categories"))
-app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_admin("suppliers"))
-app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags=["Exchange Rates"],    dependencies=_admin("exchange_rates"))
+# ── 全局元数据 / 跨云配置 — router 级开放给所有云管角色(读),
+# 写操作(POST/PUT/PATCH/DELETE)在各 router 内部单独 require_roles("cloud_admin")。
+# 之所以读不锁 admin:前端"添加云账号"对话框需要拉货源/渠道下拉选项,云角色用户也需要看。
+app.include_router(categories.router,       prefix="/api/categories",       tags=["Categories"],        dependencies=_cloud("categories"))
+app.include_router(suppliers.router,        prefix="/api/suppliers",        tags=["Suppliers"],         dependencies=_cloud("suppliers"))
+app.include_router(exchange_rates.router,   prefix="/api/exchange-rates",   tags=["Exchange Rates"],    dependencies=_cloud("exchange_rates"))
 
 # ── Azure 部署 / 跨租户授权 — admin + ops + cloud_azure(Azure 专属功能,该云运维理应能用)
 # cloud_aws / cloud_gcp / cloud_taiji 故意不放(Azure 跟他们无关)

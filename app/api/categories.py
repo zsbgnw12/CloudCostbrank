@@ -10,7 +10,9 @@ from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryRead
 from app.services.audit_service import log_operation
 
-router = APIRouter(dependencies=[Depends(require_roles("cloud_admin"))])
+# router 级不锁 admin:GET 类接口任何云管角色都能看(给前端下拉选项用)。
+# 写操作(POST/PUT/DELETE)在各端点单独显式加 admin 锁。
+router = APIRouter()
 
 
 @router.get("/", response_model=list[CategoryRead])
@@ -19,7 +21,8 @@ async def list_categories(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.post("/", response_model=CategoryRead, status_code=201)
+@router.post("/", response_model=CategoryRead, status_code=201,
+             dependencies=[Depends(require_roles("cloud_admin"))])
 async def create_category(body: CategoryCreate, db: AsyncSession = Depends(get_db)):
     cat = Category(**body.model_dump())
     db.add(cat)
@@ -36,7 +39,8 @@ async def get_category(category_id: int, db: AsyncSession = Depends(get_db)):
     return cat
 
 
-@router.put("/{category_id}", response_model=CategoryRead)
+@router.put("/{category_id}", response_model=CategoryRead,
+            dependencies=[Depends(require_roles("cloud_admin"))])
 async def update_category(category_id: int, body: CategoryUpdate, db: AsyncSession = Depends(get_db)):
     cat = await db.get(Category, category_id)
     if not cat:
@@ -53,7 +57,8 @@ async def update_category(category_id: int, body: CategoryUpdate, db: AsyncSessi
     return cat
 
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204,
+               dependencies=[Depends(require_roles("cloud_admin"))])
 async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
     from sqlalchemy import func
     from app.models.data_source import DataSource
