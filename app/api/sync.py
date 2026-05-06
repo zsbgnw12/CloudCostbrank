@@ -10,6 +10,7 @@ from app.auth.dependencies import get_current_principal, require_roles
 from app.auth.principal import Principal
 from app.auth.scope import (
     ensure_data_source_visible,
+    extract_providers_from_roles,
     has_full_access,
     visible_data_source_ids,
 )
@@ -58,12 +59,38 @@ async def sync_all(
     body: SyncRequest,
     principal: Principal = Depends(get_current_principal),
 ):
-    """触发全量同步 — 非 admin/ops 角色不允许(批量动作不细分 provider)。"""
-    if not has_full_access(principal):
-        raise HTTPException(403, "Only cloud_admin/cloud_ops can trigger full sync; cloud_<provider> users should sync individual data sources.")
+    """触发全量同步。
+    - admin/ops:不限,body.provider 为空 → 同步全部 provider
+    - cloud_<provider> 用户:自动限制为自己 provider 范围
+        · body.provider 为空:为每个 visible provider 各 dispatch 一次
+        · body.provider 指定但不在用户范围:403
+    """
     from tasks.sync_tasks import sync_all as sync_all_task
-    result = sync_all_task.delay(body.start_month, body.end_month, body.provider)
-    return {"task_id": result.id, "status": "dispatched"}
+
+    if has_full_access(principal):
+        result = sync_all_task.delay(body.start_month, body.end_month, body.provider)
+        return {"task_id": result.id, "status": "dispatched"}
+
+    # 云角色:按 provider 范围自动限定
+    my_providers = extract_providers_from_roles(principal.roles)
+    if not my_providers:
+        raise HTTPException(403, "No cloud provider role assigned")
+
+    if body.provider:
+        if body.provider not in my_providers:
+            raise HTTPException(
+                403,
+                f"Provider '{body.provider}' out of your scope (you can sync: {','.join(my_providers)})",
+            )
+        result = sync_all_task.delay(body.start_month, body.end_month, body.provider)
+        return {"task_id": result.id, "status": "dispatched"}
+
+    # 没指定 provider:为每个 visible provider 各 dispatch 一次
+    task_ids = []
+    for p in my_providers:
+        r = sync_all_task.delay(body.start_month, body.end_month, p)
+        task_ids.append(r.id)
+    return {"task_ids": task_ids, "status": "dispatched", "providers": my_providers}
 
 
 @router.post("/refresh-summary",

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func, case, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal, require_cloud_role, require_roles
@@ -72,9 +72,35 @@ async def delete_rule(
     db: AsyncSession = Depends(get_db),
     _: Principal = Depends(require_cloud_role()),
 ):
+    """删除告警规则。FK 依赖链:Notification → AlertHistory → AlertRule。
+    schema 没设 ondelete CASCADE,所以接口里手工按链清理:
+      1. 把所有引用该 rule 历史的 notifications 的 alert_history_id 置 NULL
+         (Notification.alert_history_id 是 nullable,所以可解关联但保留通知正文)
+      2. 删除该 rule 的所有 history
+      3. 删 rule 本身
+    """
     rule = await db.get(AlertRule, rule_id)
     if not rule:
         raise HTTPException(404, "Alert rule not found")
+
+    # 先收集该 rule 关联的所有 history id
+    hist_ids = list(
+        (await db.execute(
+            select(AlertHistory.id).where(AlertHistory.rule_id == rule_id)
+        )).scalars().all()
+    )
+    if hist_ids:
+        # notifications.alert_history_id → NULL(保留通知,只解 FK 关联)
+        await db.execute(
+            update(Notification)
+            .where(Notification.alert_history_id.in_(hist_ids))
+            .values(alert_history_id=None)
+        )
+        # 删 history
+        await db.execute(
+            delete(AlertHistory).where(AlertHistory.rule_id == rule_id)
+        )
+
     await db.delete(rule)
     await db.commit()
 
