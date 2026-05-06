@@ -146,6 +146,37 @@ async def mark_all_read(
     await db.commit()
 
 
+@router.delete("/notifications/{notification_id}", status_code=204)
+async def delete_notification(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
+    """删除单条通知。"""
+    notif = await db.get(Notification, notification_id)
+    if not notif:
+        raise HTTPException(404, "Notification not found")
+    await db.delete(notif)
+    await db.commit()
+
+
+@router.delete("/notifications", status_code=204)
+async def delete_all_notifications(
+    only_read: bool = Query(False, description="若为 true 只删已读;false 删全部"),
+    db: AsyncSession = Depends(get_db),
+    _: Principal = Depends(get_current_principal),
+):
+    """批量清空通知。only_read=true 只删已读;否则全删。"""
+    stmt = select(Notification)
+    if only_read:
+        stmt = stmt.where(Notification.is_read.is_(True))
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    for n in rows:
+        await db.delete(n)
+    await db.commit()
+
+
 # ─── Commitment Status (for charts) ───────────────────────────
 
 class CommitmentStatus(BaseModel):
@@ -178,11 +209,13 @@ async def rule_status(
     db: AsyncSession = Depends(get_db),
     _: Principal = Depends(get_current_principal),
 ):
-    """Return progress status for ALL active rules with a target project.
-    For alerts (daily_absolute, monthly_budget, daily_increase_pct):
-      progress bar fills toward threshold — triggered when actual >= threshold.
-    For commitments (monthly_minimum_commitment):
-      progress bar fills toward commitment — triggered (bad) when actual < threshold.
+    """Return progress status for ALL active rules.
+
+    支持 5 种 threshold_type:
+      - daily_absolute / monthly_budget / daily_increase_pct → 单 project,触发 = 超阈值
+      - monthly_minimum_commitment   → 单 project,触发(坏)= 低于承诺
+      - account_lifetime_quota       → 单 project,actual = 全期累计
+      - monthly_budget_multi         → 多 project(target_id 逗号分隔),actual = 该组本月合计
     """
     if month:
         year, mon = int(month[:4]), int(month[5:7])
@@ -194,11 +227,10 @@ async def rule_status(
     month_end = dt.date(year + 1, 1, 1) if mon == 12 else dt.date(year, mon + 1, 1)
     yesterday = dt.date.today() - dt.timedelta(days=1)
 
-    # All active rules with a target project
+    # 拉所有 active 规则(不再限 target_type='project',否则丢 multi 等新类型)
     rules_result = await db.execute(
         select(AlertRule).where(
             AlertRule.is_active.is_(True),
-            AlertRule.target_type == "project",
             AlertRule.target_id.isnot(None),
         )
     )
@@ -206,9 +238,23 @@ async def rule_status(
     if not rules:
         return []
 
-    project_ids = list({r.target_id for r in rules})
+    # 收集所有 target_id 涉及的 project external_id(单 + 多 group 拆开)
+    all_project_ids: set[str] = set()
+    rule_pids: dict[int, list[str]] = {}  # rule.id → 该规则关联的 project_ids
+    for r in rules:
+        if r.target_id and "," in r.target_id:
+            ids = [p.strip() for p in r.target_id.split(",") if p.strip()]
+        else:
+            ids = [r.target_id] if r.target_id else []
+        rule_pids[r.id] = ids
+        all_project_ids.update(ids)
 
-    # Project info — provider 仅来自 supply_sources
+    if not all_project_ids:
+        return []
+
+    project_ids = list(all_project_ids)
+
+    # Project info(provider 仅来自 supply_sources)
     proj_result = await db.execute(
         select(Project, SupplySource)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
@@ -218,13 +264,10 @@ async def rule_status(
     for proj, ss in proj_result.all():
         acct_map[proj.external_project_id] = (proj.id, proj.name, ss.provider, proj.external_project_id)
 
-    # Monthly cost per project
+    # Per-project monthly cost(本月)
     monthly_result = await db.execute(
         select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .join(Project, BillingData.project_id == Project.external_project_id)
-        .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .where(
-            BillingData.provider == SupplySource.provider,
             BillingData.date >= month_start,
             BillingData.date < month_end,
             BillingData.project_id.in_(project_ids),
@@ -233,12 +276,17 @@ async def rule_status(
     )
     monthly_map: dict[str, Decimal] = {r.project_id: r.total for r in monthly_result}
 
+    # Per-project lifetime cost(全期累计 — 给 account_lifetime_quota 用)
+    lifetime_result = await db.execute(
+        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
+        .where(BillingData.project_id.in_(project_ids))
+        .group_by(BillingData.project_id)
+    )
+    lifetime_map: dict[str, Decimal] = {r.project_id: r.total for r in lifetime_result}
+
     daily_result = await db.execute(
         select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .join(Project, BillingData.project_id == Project.external_project_id)
-        .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .where(
-            BillingData.provider == SupplySource.provider,
             BillingData.date == yesterday,
             BillingData.project_id.in_(project_ids),
         )
@@ -249,10 +297,7 @@ async def rule_status(
     day_before = yesterday - dt.timedelta(days=1)
     prev_daily_result = await db.execute(
         select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .join(Project, BillingData.project_id == Project.external_project_id)
-        .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .where(
-            BillingData.provider == SupplySource.provider,
             BillingData.date == day_before,
             BillingData.project_id.in_(project_ids),
         )
@@ -262,27 +307,52 @@ async def rule_status(
 
     items: list[RuleStatus] = []
     for rule in rules:
-        pid = rule.target_id
         threshold = float(rule.threshold_value)
-        info = acct_map.get(pid)
+        pids = rule_pids.get(rule.id, [])
 
-        if rule.threshold_type == "daily_absolute":
-            actual = float(daily_map.get(pid, Decimal("0")))
-        elif rule.threshold_type == "monthly_budget" or rule.threshold_type == "monthly_minimum_commitment":
-            actual = float(monthly_map.get(pid, Decimal("0")))
-        elif rule.threshold_type == "daily_increase_pct":
-            prev = float(prev_daily_map.get(pid, Decimal("0")))
-            curr = float(daily_map.get(pid, Decimal("0")))
-            actual = round(((curr - prev) / prev * 100), 2) if prev > 0 else 0
+        if rule.threshold_type == "monthly_budget_multi":
+            # 多项目本月合计
+            actual = float(sum(monthly_map.get(p, Decimal("0")) for p in pids))
+            triggered = actual >= threshold
+            display_name = f"{len(pids)} 个项目"
+            display_provider = "multi"
+            display_pid = rule.target_id or ""
+        elif rule.threshold_type == "account_lifetime_quota":
+            pid = pids[0] if pids else ""
+            info = acct_map.get(pid)
+            actual = float(lifetime_map.get(pid, Decimal("0")))
+            # 90% 即触发
+            triggered = actual >= threshold * 0.9
+            display_name = info[1] if info else pid
+            display_provider = info[2] if info else "unknown"
+            display_pid = pid
         else:
-            actual = 0
+            # 单 project 类型
+            pid = pids[0] if pids else ""
+            info = acct_map.get(pid)
+            display_name = info[1] if info else pid
+            display_provider = info[2] if info else "unknown"
+            display_pid = pid
+
+            if rule.threshold_type == "daily_absolute":
+                actual = float(daily_map.get(pid, Decimal("0")))
+                triggered = actual >= threshold
+            elif rule.threshold_type == "monthly_budget":
+                actual = float(monthly_map.get(pid, Decimal("0")))
+                triggered = actual >= threshold
+            elif rule.threshold_type == "monthly_minimum_commitment":
+                actual = float(monthly_map.get(pid, Decimal("0")))
+                triggered = actual < threshold  # 承诺 bad when UNDER
+            elif rule.threshold_type == "daily_increase_pct":
+                prev = float(prev_daily_map.get(pid, Decimal("0")))
+                curr = float(daily_map.get(pid, Decimal("0")))
+                actual = round(((curr - prev) / prev * 100), 2) if prev > 0 else 0
+                triggered = actual >= threshold
+            else:
+                actual = 0
+                triggered = False
 
         pct = round(actual / threshold * 100, 1) if threshold > 0 else 0
-
-        if rule.threshold_type == "monthly_minimum_commitment":
-            triggered = actual < threshold  # bad when UNDER
-        else:
-            triggered = actual >= threshold  # bad when OVER
 
         items.append(RuleStatus(
             rule_id=rule.id,
@@ -292,9 +362,9 @@ async def rule_status(
             actual=round(actual, 2),
             pct=min(pct, 200),
             triggered=triggered,
-            account_name=info[1] if info else pid,
-            provider=info[2] if info else "unknown",
-            external_project_id=pid,
+            account_name=display_name,
+            provider=display_provider,
+            external_project_id=display_pid,
         ))
 
     return items

@@ -840,9 +840,15 @@ class BulkAssignResponse(BaseModel):
 @router.post(
     "/bulk-assign",
     response_model=BulkAssignResponse,
-    dependencies=[Depends(_account_in_scope)],
 )
-async def bulk_assign(body: BulkAssignRequest, db: AsyncSession = Depends(get_db)):
+async def bulk_assign(
+    body: BulkAssignRequest,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    # 批量校验:body 里所有 account_id 都必须在用户范围内
+    for aid in body.account_ids:
+        await _scope_check_account(db, principal, aid)
     """
     批量把服务账号迁到另一个货源（SupplySource）下。
 
@@ -986,13 +992,16 @@ async def standby_account(account_id: int, request: Request, db: AsyncSession = 
 @router.post(
     "/customer-assignments/sync",
     response_model=SalesSyncResult,
-    dependencies=[Depends(_account_in_scope)],
 )
 async def sync_customer_assignments(
     body: SalesSyncBody,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
+    # 销售系统批量下发:仅 admin/ops 可调(跨 provider 操作)
+    if not has_full_access(principal):
+        raise HTTPException(403, "Only cloud_admin/cloud_ops can run sales sync (cross-provider).")
     """销售系统调用：批量下发 (customer_code, supplier, provider, external_project_id) 关联。
 
     定位键：(supplier_name, provider, external_project_id)。找不到则写入 unmatched 返回，
@@ -1440,9 +1449,16 @@ def _build_excel(
 
 @router.post(
     "/discover-gcp-projects",
-    dependencies=[Depends(_account_in_scope)],
 )
-async def discover_gcp_projects(db: AsyncSession = Depends(get_db)):
+async def discover_gcp_projects(
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    # 跨 GCP 账号的发现操作:cloud_admin/ops 全开;cloud_gcp 也允许(它就是管 GCP)
+    if not has_full_access(principal):
+        scope_providers = extract_providers_from_roles(principal.roles)
+        if "gcp" not in scope_providers:
+            raise HTTPException(403, "Need cloud_admin / cloud_ops / cloud_gcp role")
     """为账单中存在但未建档的 GCP project 创建 Project，挂在系统供应商「未分配资源组」的 GCP 货源下。"""
     billing_res = await db.execute(
         select(
