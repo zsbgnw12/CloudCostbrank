@@ -260,6 +260,7 @@ async def me(
     # Casdoor 是单一权威源:返回 principal.roles(middleware 已按认证方式填好:
     # 人类登录用 token roles、机器应用 fallback DB、API key 用 owner DB)。
     # 不做并集——保证 Casdoor 后台撤销角色立即生效。
+    from app.auth.scope import visible_providers as _visible_providers
     return CurrentUser(
         id=user.id,
         username=user.username,
@@ -268,4 +269,5 @@ async def me(
         avatar_url=user.avatar_url,
         roles=sorted(set(principal.roles or [])),
         visible_cloud_account_ids=visible,
+        visible_providers=_visible_providers(principal),
     )

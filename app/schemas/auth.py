@@ -31,8 +31,12 @@ class CurrentUser(BaseModel):
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     roles: list[str] = []
-    # None means "full access" (cloud_admin); otherwise explicit list.
+    # None means "full access" (cloud_admin / cloud_ops); otherwise explicit list.
     visible_cloud_account_ids: Optional[list[int]] = None
+    # 数据范围对应的 provider 列表(从 cloud_<provider> 角色名提取)。
+    # None = 全量(admin/ops);[] = 无任何范围;["aws","gcp"] = 限定到这些 provider。
+    # 前端用此字段过滤"添加云账号"等场景的货源/选项下拉。
+    visible_providers: Optional[list[str]] = None
 
 
 # ---------- Login / token ----------
