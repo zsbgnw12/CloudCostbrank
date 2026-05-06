@@ -101,12 +101,14 @@ async def _issue_session(db: AsyncSession, user: User, ip: str | None, user_agen
 # ---------------- Login start ----------------
 
 @router.get("/login", response_model=LoginUrlResponse)
-async def login_start(redirect: bool = False):
-    """Return the Casdoor authorize URL. If `redirect=true`, 302 directly."""
+async def login_start(redirect: bool = False, force: bool = False):
+    """Return the Casdoor authorize URL. If `redirect=true`, 302 directly.
+    `force=true` 时附加 prompt=select_account,强制 Casdoor 让用户重新选账号
+    (用户主动换号 / 无权限重登避免死循环)。"""
     if not settings.CASDOOR_CLIENT_ID:
         raise HTTPException(500, "Casdoor not configured (CASDOOR_CLIENT_ID missing)")
     state = _put_state()
-    url = casdoor_client.authorize_url(state)
+    url = casdoor_client.authorize_url(state, force_select=force)
     if redirect:
         return RedirectResponse(url)
     return LoginUrlResponse(authorize_url=url, state=state)

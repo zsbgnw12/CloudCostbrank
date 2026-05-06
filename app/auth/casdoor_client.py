@@ -21,15 +21,22 @@ def _endpoint() -> str:
 
 # ------- URLs -------
 
-def authorize_url(state: str, scope: str = "openid profile email") -> str:
-    qs = urllib.parse.urlencode({
+def authorize_url(state: str, scope: str = "openid profile email", *, force_select: bool = False) -> str:
+    """构建 Casdoor 授权 URL。force_select=True 时附加 prompt=select_account,
+    让 Casdoor 不复用 cookie 直接授权,强制用户重新选账号 — 用于:
+      - 用户主动"换账号登录"
+      - 当前账号无云管角色,需要换号才能恢复
+    """
+    params = {
         "response_type": "code",
         "client_id": settings.CASDOOR_CLIENT_ID,
         "redirect_uri": settings.CASDOOR_REDIRECT_URI,
         "scope": scope,
         "state": state,
-    })
-    return f"{_endpoint()}/login/oauth/authorize?{qs}"
+    }
+    if force_select:
+        params["prompt"] = "select_account"
+    return f"{_endpoint()}/login/oauth/authorize?{urllib.parse.urlencode(params)}"
 
 
 def logout_url(post_logout_redirect: str | None = None) -> str:
