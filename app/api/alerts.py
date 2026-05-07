@@ -6,6 +6,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, case, delete, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.scope import (
     extract_providers_from_roles,
