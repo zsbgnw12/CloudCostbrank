@@ -79,7 +79,7 @@ async def _visible_rule_ids(db: AsyncSession, principal) -> list[int] | None:
         if set(provs) & user_providers:
             visible.append(r.id)
     return visible
-from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from app.auth.dependencies import get_current_principal, require_cloud_role, require_roles
 from app.auth.principal import Principal
@@ -218,16 +218,51 @@ async def alert_history(
 
 # ─── Notifications ─────────────────────────────────────────────
 
+def _scope_notifications_stmt(stmt, visible_rule_ids: list[int] | None):
+    """把通知 SELECT 限制在用户可见 rule 内。
+    visible_rule_ids=None  → 全访问(admin/ops),不加过滤
+    visible_rule_ids=[]    → 用户没任何可见 rule,直接 false
+    其它情况 → 通知必须挂在可见 rule 的 history 上(orphan 通知 alert_history_id=NULL
+              当作系统通知,所有人都能看)
+    """
+    if visible_rule_ids is None:
+        return stmt
+    if not visible_rule_ids:
+        return stmt.where(Notification.id == -1)  # 永假
+    sub = select(AlertHistory.id).where(AlertHistory.rule_id.in_(visible_rule_ids))
+    return stmt.where(
+        (Notification.alert_history_id.is_(None)) |
+        (Notification.alert_history_id.in_(sub))
+    )
+
+
+async def _ensure_notification_visible(
+    db: AsyncSession, principal: Principal, notif: Notification
+) -> None:
+    """单条通知的越权校验。alert_history_id=NULL 视为系统通知,放行;
+    否则关联到 rule,要求 rule 在用户可见范围内。"""
+    visible = await _visible_rule_ids(db, principal)
+    if visible is None:
+        return
+    if notif.alert_history_id is None:
+        return
+    hist = await db.get(AlertHistory, notif.alert_history_id)
+    if hist is None or hist.rule_id not in (visible or []):
+        raise HTTPException(403, "Forbidden")
+
+
 @router.get("/notifications", response_model=list[NotificationRead])
 async def list_notifications(
     unread_only: bool = False,
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     stmt = select(Notification).order_by(Notification.id.desc()).limit(limit)
     if unread_only:
         stmt = stmt.where(Notification.is_read.is_(False))
+    visible = await _visible_rule_ids(db, principal)
+    stmt = _scope_notifications_stmt(stmt, visible)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -235,11 +270,12 @@ async def list_notifications(
 @router.get("/notifications/unread-count")
 async def unread_count(
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
-    result = await db.execute(
-        select(func.count()).select_from(Notification).where(Notification.is_read.is_(False))
-    )
+    stmt = select(func.count()).select_from(Notification).where(Notification.is_read.is_(False))
+    visible = await _visible_rule_ids(db, principal)
+    stmt = _scope_notifications_stmt(stmt, visible)
+    result = await db.execute(stmt)
     return {"count": result.scalar() or 0}
 
 
@@ -247,11 +283,12 @@ async def unread_count(
 async def mark_read(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     notif = await db.get(Notification, notification_id)
     if not notif:
         raise HTTPException(404, "Notification not found")
+    await _ensure_notification_visible(db, principal, notif)
     notif.is_read = True
     await db.commit()
 
@@ -259,11 +296,12 @@ async def mark_read(
 @router.post("/notifications/read-all", status_code=204)
 async def mark_all_read(
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
-    result = await db.execute(
-        select(Notification).where(Notification.is_read.is_(False))
-    )
+    stmt = select(Notification).where(Notification.is_read.is_(False))
+    visible = await _visible_rule_ids(db, principal)
+    stmt = _scope_notifications_stmt(stmt, visible)
+    result = await db.execute(stmt)
     for notif in result.scalars().all():
         notif.is_read = True
     await db.commit()
@@ -273,12 +311,13 @@ async def mark_all_read(
 async def delete_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     """删除单条通知。"""
     notif = await db.get(Notification, notification_id)
     if not notif:
         raise HTTPException(404, "Notification not found")
+    await _ensure_notification_visible(db, principal, notif)
     await db.delete(notif)
     await db.commit()
 
@@ -287,12 +326,14 @@ async def delete_notification(
 async def delete_all_notifications(
     only_read: bool = Query(False, description="若为 true 只删已读;false 删全部"),
     db: AsyncSession = Depends(get_db),
-    _: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(get_current_principal),
 ):
     """批量清空通知。only_read=true 只删已读;否则全删。"""
     stmt = select(Notification)
     if only_read:
         stmt = stmt.where(Notification.is_read.is_(True))
+    visible = await _visible_rule_ids(db, principal)
+    stmt = _scope_notifications_stmt(stmt, visible)
     result = await db.execute(stmt)
     rows = result.scalars().all()
     for n in rows:
