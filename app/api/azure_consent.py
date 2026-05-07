@@ -239,7 +239,7 @@ async def delete_invite(invite_id: int, db: AsyncSession = Depends(get_db)):
     await log_operation(
         db, action="delete_consent_invite", target_type="azure_consent_invite",
         target_id=invite.id,
-        before_data={"customer_label": invite.customer_label, "status": invite.status},
+        before_data={"account_name": invite.account_name, "status": invite.status},
     )
     await db.delete(invite)
 
