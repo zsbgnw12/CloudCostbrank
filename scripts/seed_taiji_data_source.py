@@ -1,28 +1,20 @@
 """
-幂等地创建/更新 Taiji 数据源所需的 4 条记录:Supplier + SupplySource + CloudAccount + DataSource。
+幂等地创建/更新 Taiji 数据源所需的 4 条记录：Supplier + SupplySource + CloudAccount + DataSource。
 
-Pull 路径(主):每日由 Celery `sync_recent_days` 拉取 Azure Blob 上的预聚合 JSON
-              文件 `{YYYY-MM-DD}_UTC+0.json`,详见 collectors/taiji_collector.py。
+使用方法（设置环境变量再跑）：
 
-Push 路径(可选):taiji 主动 POST `/api/metering/taiji/ingest` 推送原始日志到
-              billing_raw_taiji,实时重算 billing_summary;Push 与 Pull 互斥,
-              开 Pull 时 Push 不应再供数(否则 project_id 主键约定不一致)。
-
-使用方法(环境变量配置后执行):
-
-    # 必填
-    export DATABASE_URL=postgresql+asyncpg://...
-    export AES_SECRET_KEY=...                  # 与在线一致(Fernet key)
-    export TAIJI_BLOB_SAS_URL='https://<acc>.blob.core.windows.net/<container>?sp=r&sv=...&sr=c&sig=...'
-
-    # 可选
-    export TAIJI_TIMEZONE_TAG=UTC+0            # blob 文件名时区后缀,默认 UTC+0
-    export TAIJI_SUPPLIER_NAME='Taiji AI 聚合平台'   # 默认此值
-    export TAIJI_DS_ACTIVE=true                # 是否启用日常 Pull,默认 true
+    export DATABASE_URL=postgresql+asyncpg://...   # 或用 SYNC_DATABASE_URL
+    export AES_SECRET_KEY=...                      # 和在线一致（Fernet key）
+    export TAIJI_API_BASE=https://api.taijiaicloud.com
+    export TAIJI_ACCESS_TOKEN=<admin access token>
+    export TAIJI_ADMIN_USER_ID=1                   # 可选
+    export TAIJI_SUPPLIER_NAME='Taiji AI 聚合平台'  # 可选，默认此值
+    export TAIJI_QUOTA_PER_USD=500000              # 可选，默认 500000
 
     python -m scripts.seed_taiji_data_source
 
-重复执行安全:已存在的记录就地更新(凭据重加密覆盖),不重复插入。
+重复执行是安全的：已存在的 Supplier / SupplySource / CloudAccount / DataSource
+会被就地更新（凭据重加密覆盖），不重复插入。
 """
 
 from __future__ import annotations
@@ -33,7 +25,7 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import settings  # noqa: F401 — env load 副作用
+from app.config import settings  # noqa: F401 — ensure env-loading side effects
 from app.services.sync_service import _get_sync_engine
 from app.services.crypto_service import encrypt_dict
 from app.models.supplier import Supplier
@@ -50,17 +42,12 @@ def _env(key: str, required: bool = False, default: str | None = None) -> str | 
     return v
 
 
-def _parse_bool(v: str | None, default: bool) -> bool:
-    if v is None:
-        return default
-    return v.strip().lower() in ("1", "true", "yes", "on", "y")
-
-
 def main():
-    blob_sas_url = _env("TAIJI_BLOB_SAS_URL", required=True)
-    timezone_tag = _env("TAIJI_TIMEZONE_TAG") or "UTC+0"
+    api_base = _env("TAIJI_API_BASE", required=True)
+    access_token = _env("TAIJI_ACCESS_TOKEN", required=True)
+    admin_user_id = _env("TAIJI_ADMIN_USER_ID") or ""
     supplier_name = _env("TAIJI_SUPPLIER_NAME") or "Taiji AI 聚合平台"
-    ds_active = _parse_bool(_env("TAIJI_DS_ACTIVE"), default=True)
+    quota_per_usd = int(_env("TAIJI_QUOTA_PER_USD") or "500000")
 
     engine = _get_sync_engine()
     with Session(engine) as session:
@@ -76,7 +63,7 @@ def main():
         else:
             print(f"[=] Supplier exists:  {sup.id} {sup.name}")
 
-        # 2) SupplySource(provider=taiji)
+        # 2) SupplySource（provider=taiji）
         ss = session.execute(
             select(SupplySource).where(
                 SupplySource.supplier_id == sup.id,
@@ -91,8 +78,12 @@ def main():
         else:
             print(f"[=] SupplySource exists:  ss.id={ss.id}")
 
-        # 3) CloudAccount — Fernet 加密 secret_data
-        secret_payload = {"blob_sas_url": blob_sas_url}
+        # 3) CloudAccount — 凭据 Fernet 加密存入 secret_data
+        secret_payload = {
+            "api_base": api_base.rstrip("/"),
+            "access_token": access_token,
+            "admin_user_id": admin_user_id,
+        }
         encrypted = encrypt_dict(secret_payload)
 
         ca_name = f"taiji-{sup.name}"
@@ -108,34 +99,48 @@ def main():
             ca.provider = "taiji"
             ca.secret_data = encrypted
             session.flush()
-            print(f"[~] CloudAccount updated: ca.id={ca.id} (SAS 重加密覆盖)")
+            print(f"[~] CloudAccount updated: ca.id={ca.id} (凭据重加密覆盖)")
 
-        # 4) DataSource — 配置精简,timezone_tag 之外都用默认
-        ds_config = {"timezone_tag": timezone_tag}
+        # 4) DataSource
         ds = session.execute(
             select(DataSource).where(DataSource.cloud_account_id == ca.id).limit(1)
         ).scalars().first()
+        ds_config = {
+            "quota_per_usd": quota_per_usd,
+            "page_size": 200,
+            "page_start": 1,  # Pull 才用到；默认 1-based
+        }
         if not ds:
             ds = DataSource(
                 name=f"ds-taiji-{sup.name}",
                 cloud_account_id=ca.id,
                 config=ds_config,
-                is_active=ds_active,
+                # Push 模式下 is_active=False，防止 02:00 定时 Pull 误触发拉取；
+                # 人工补历史时手动 UPDATE data_sources SET is_active=true。
+                is_active=False,
             )
             session.add(ds)
             session.flush()
-            print(f"[+] DataSource created: ds.id={ds.id} (is_active={ds_active})")
+            print(f"[+] DataSource created: ds.id={ds.id} (is_active=False, Push 模式)")
         else:
+            # 仅更新 config，不动 is_active（尊重运维当前状态）
             ds.config = ds_config
-            ds.is_active = ds_active
             session.flush()
-            print(f"[~] DataSource updated: ds.id={ds.id} (config 刷新, is_active={ds_active})")
+            print(f"[~] DataSource updated: ds.id={ds.id} config refreshed (is_active 保持现状)")
 
         session.commit()
 
-    print("\n✓ Taiji 数据源 seed 完成。")
-    print("  日常调度:Celery beat sync_recent_days 会每天滚动拉 [今天-6, 今天]。")
-    print("  人工补历史:POST /api/sync/<ds_id>?start_month=YYYY-MM 或调 sync_data_source_by_dates。")
+        ca_id = ca.id
+
+    print(f"\n✓ Taiji 数据源 seed 完成。")
+    print(f"  Push 模式下一步：")
+    print(f"    1. 在 cloudcost UI /api/api-keys 创建一个 API Key")
+    print(f"       - allowed_modules = ['metering']")
+    print(f"       - allowed_cloud_account_ids = [{ca_id}]")
+    print(f"    2. 把 X-API-Key 交给 taiji 团队配置 webhook")
+    print(f"    3. taiji 推 POST /api/metering/taiji/ingest，body = {{logs: [...]}}")
+    print(f"  Pull 后备：UPDATE data_sources SET is_active=true WHERE id=<ds.id>，")
+    print(f"    然后 POST /api/sync/<ds_id>?start_month=YYYY-MM 补历史。")
 
 
 if __name__ == "__main__":

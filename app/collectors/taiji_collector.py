@@ -1,60 +1,34 @@
-"""Taiji billing collector — 每日 Azure Blob 预聚合 JSON 模式。
+"""Taiji (New-API fork) billing + token-usage collector.
 
-设计目标:输出行形态与 AWS / GCP / Azure 完全一致,只写 billing_summary,
-不再写 token_usage 旁路 —— 平台上 metering / dashboard 等 UI 直接复用同一套
-SQL,不需要 taiji 特判。Taiji 是 Push 数据的一方:数据生产方每天往
-Azure Blob 容器里丢一个 `{YYYY-MM-DD}_UTC+0.json`,我们只负责按天拉下来落库。
+Taiji 是基于 New-API 二次开发的内部 AI 聚合平台。日志接口沿用 New-API 的
+ `/api/log/` 规范：分页、按时间戳过滤、按 `type=2` 取消费日志。
 
-Secret data schema (Fernet-encrypted in CloudAccount.secret_data):
+Secret data schema (Fernet-encrypted in CloudAccount):
     {
-        "blob_sas_url": "https://<acc>.blob.core.windows.net/<container>?sp=r&...&sig=..."
-    }
-    SAS 必须是容器级(sr=c)只读(sp=r),包含完整 query string。
-
-DataSource.config schema(均为可选):
-    {
-        "timezone_tag": "UTC+0",   # 文件名后缀,默认 UTC+0
-        "filename_template": "{date}_{tz}.json",
-        "request_timeout_sec": 60
+        "api_base": "https://api.taijiaicloud.com",
+        "access_token": "<admin access token>",   # Authorization: Bearer <token>
+        "admin_user_id": "1"                       # 可选：New-API-User header，大多数部署需要
     }
 
-JSON 文件结构(按天预聚合):
+DataSource.config schema:
     {
-        "date_range": {"start_at": "2026-05-07 00:00:00", "end_at": "...", "timezone": "UTC+0"},
-        "taiji": {
-            "<username>": {
-                "<token_name>": {
-                    "key_display": "sk-XXX",
-                    "total_cost": ...,
-                    "total_count": ...,
-                    "details": {
-                        "<model>": {"prompt_tokens": .., "completion_tokens": .., "cost": .., "count": .., "cache_hit_tokens": ..}
-                    }
-                }
-            }
-        }
+        "quota_per_usd": 500000,        # quota 换算美元倍数，OneAPI/New-API 默认 500000
+        "filter_username": null,        # 可选：只拉某个用户
+        "filter_token_name": null,      # 可选：只拉某个 token
+        "page_size": 100,               # 可选：分页大小
+        "page_start": 1                 # 可选：首页的 p 值；多数 new-api 版本是 1-based，
+                                        # 新 fork 若为 0-based 可改成 0
     }
 
-落库映射(对齐 AWS account_id / GCP project.id / Azure subscription_id 的角色):
-    project_id    = "<username>:<token_name>"   blob 内天然主键,等价 AWS account_id
-    project_name  = same as project_id
-    product       = <model>                      等价 AWS service / GCP service / Azure meterCategory
-    usage_type    = ""                           taiji 暂无子分类
-    region        = NULL                         taiji 不分 region
-    cost / currency / currency_conversion_rate = details[model].cost / "USD" / 1.0
-    cost_type     = "regular"
-    usage_quantity / usage_unit = prompt+completion tokens / "tokens"
-    additional_info = {key_display, request_count, prompt_tokens, completion_tokens, cache_hit_tokens?}
-
-Push 路径(/api/metering/taiji/ingest → billing_raw_taiji)是历史遗留,与本采集器
-互不依赖;保留 `_aggregate_logs` 等辅助函数纯粹是为了不打破老的 push ingest。
+返回 billing rows 兼容 sync_service.upsert_billing_rows 的格式，并在每行
+附带 `_token_usage` 字段（dict），供 sync_service 侧再做一次按
+(date, model) 的聚合 upsert 进 token_usage 表。
 """
 
 import datetime as dt
 import logging
 from collections import defaultdict
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -62,17 +36,17 @@ from app.collectors.base import BaseCollector
 
 logger = logging.getLogger(__name__)
 
-# Push 模式保留:quota → USD 兑换倍数(New-API 惯例)
-_DEFAULT_QUOTA_PER_USD = 500_000
-_DEFAULT_PAGE_SIZE = 100
+# 消费日志类型（New-API 约定：2 = consume / request）
+_LOG_TYPE_CONSUME = 2
 
-_DEFAULT_TIMEZONE_TAG = "UTC+0"
-_DEFAULT_FILENAME_TEMPLATE = "{date}_{tz}.json"
-_DEFAULT_REQUEST_TIMEOUT_SEC = 60.0
+# 默认 quota → USD 转换倍数（OneAPI / New-API 惯例）
+_DEFAULT_QUOTA_PER_USD = 500_000
+
+_DEFAULT_PAGE_SIZE = 100
 
 
 class TaijiCollector(BaseCollector):
-    """从 Azure Blob 拉每日预聚合 JSON,按 (date, token, model) 展平成 billing rows。"""
+    """从 Taiji (New-API) 拉请求日志，按天 × token × model 聚合成 billing rows。"""
 
     def collect_billing(
         self,
@@ -81,179 +55,135 @@ class TaijiCollector(BaseCollector):
         start_date: str,  # YYYY-MM-DD
         end_date: str,    # YYYY-MM-DD
     ) -> list[dict]:
-        sas_url = (secret_data or {}).get("blob_sas_url")
-        if not sas_url:
-            raise ValueError("taiji secret_data 缺少 blob_sas_url")
+        api_base = (secret_data.get("api_base") or "").rstrip("/")
+        access_token = secret_data.get("access_token")
+        admin_user_id = secret_data.get("admin_user_id")
+        if not api_base or not access_token:
+            raise ValueError("taiji secret_data 缺少 api_base 或 access_token")
 
-        config = config or {}
-        tz_tag = config.get("timezone_tag") or _DEFAULT_TIMEZONE_TAG
-        filename_template = config.get("filename_template") or _DEFAULT_FILENAME_TEMPLATE
-        timeout_sec = float(config.get("request_timeout_sec") or _DEFAULT_REQUEST_TIMEOUT_SEC)
+        quota_per_usd = int(config.get("quota_per_usd") or _DEFAULT_QUOTA_PER_USD)
+        page_size = int(config.get("page_size") or _DEFAULT_PAGE_SIZE)
+        # new-api 多数版本的 /api/log/ 首页 p=1（handler 内 offset=(p-1)*size）。
+        # 若目标部署是新 fork 的 0-based 风格，改成 config.page_start=0。
+        page_start = int(config.get("page_start") if config.get("page_start") is not None else 1)
+        filter_username = config.get("filter_username")
+        filter_token_name = config.get("filter_token_name")
 
-        d_start = dt.date.fromisoformat(start_date)
-        d_end = dt.date.fromisoformat(end_date)
-        if d_end < d_start:
-            raise ValueError(f"end_date {end_date} 早于 start_date {start_date}")
-
-        logger.info(
-            "Taiji blob fetch: [%s ~ %s] tz=%s sas_host=%s",
-            start_date, end_date, tz_tag, urlsplit(sas_url).netloc,
-        )
-
-        rows: list[dict] = []
-        days_fetched = 0
-        days_missing = 0
-
-        with httpx.Client(timeout=httpx.Timeout(timeout_sec, read=timeout_sec)) as client:
-            cur = d_start
-            while cur <= d_end:
-                filename = filename_template.format(date=cur.isoformat(), tz=tz_tag)
-                url = _build_blob_url(sas_url, filename)
-                resp = client.get(url)
-                if resp.status_code == 404:
-                    # 当天 blob 还没生成 / 未来日期,跳过即可
-                    logger.info("Taiji blob missing (404): %s", filename)
-                    days_missing += 1
-                    cur += dt.timedelta(days=1)
-                    continue
-                resp.raise_for_status()
-                day_rows = _parse_blob_day(resp.json(), default_date=cur.isoformat())
-                rows.extend(day_rows)
-                days_fetched += 1
-                cur += dt.timedelta(days=1)
+        start_ts, end_ts = _date_range_to_unix(start_date, end_date)
 
         logger.info(
-            "Taiji blob done: %d row(s) from %d day(s); %d day(s) missing",
-            len(rows), days_fetched, days_missing,
+            "Taiji fetch logs: base=%s [%s~%s] ts=[%d~%d) page_size=%d",
+            api_base, start_date, end_date, start_ts, end_ts, page_size,
         )
-        return rows
+
+        raw_logs = self._fetch_all_logs(
+            api_base=api_base,
+            access_token=access_token,
+            admin_user_id=admin_user_id,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            page_size=page_size,
+            page_start=page_start,
+            filter_username=filter_username,
+            filter_token_name=filter_token_name,
+        )
+
+        logger.info("Taiji received %d raw log records", len(raw_logs))
+        return _aggregate_logs(raw_logs, quota_per_usd=quota_per_usd)
 
     def collect_resources(self, secret_data: dict, config: dict) -> list[dict]:
         return []
 
+    # ────────────────────────── HTTP ──────────────────────────
 
-# ────────────────────── URL 拼接 ──────────────────────
+    @staticmethod
+    def _fetch_all_logs(
+        *,
+        api_base: str,
+        access_token: str,
+        admin_user_id: str | None,
+        start_ts: int,
+        end_ts: int,
+        page_size: int,
+        page_start: int,
+        filter_username: str | None,
+        filter_token_name: str | None,
+    ) -> list[dict]:
+        """New-API 的 /api/log/ 分页拉取。首页 p 由 config.page_start 决定，默认 1。"""
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        }
+        if admin_user_id:
+            # New-API 多部署要求带此 header 才能拿到全站日志
+            headers["New-API-User"] = str(admin_user_id)
 
-def _build_blob_url(container_sas_url: str, filename: str) -> str:
-    """把 SAS 容器 URL 与单个文件名拼成完整 blob URL。
+        base_params: dict[str, Any] = {
+            "type": _LOG_TYPE_CONSUME,
+            "start_timestamp": start_ts,
+            "end_timestamp": end_ts,
+            "page_size": page_size,
+        }
+        if filter_username:
+            base_params["username"] = filter_username
+        if filter_token_name:
+            base_params["token_name"] = filter_token_name
 
-    输入容器 SAS:`https://acc.blob.core.windows.net/<container>?<query>`
-    输出文件 URL:`https://acc.blob.core.windows.net/<container>/<filename>?<query>`
+        url = f"{api_base}/api/log/"
 
-    `+` 在 path 中字面有效,无需特别处理;但若 filename 含 `?` / `#` 等则要 encode。
-    Taiji 的命名只有 `[0-9-]_UTC+0.json` 这种可控形式,直接拼即可。
-    """
-    parts = urlsplit(container_sas_url)
-    new_path = parts.path.rstrip("/") + "/" + filename.lstrip("/")
-    return urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+        all_items: list[dict] = []
+        page = page_start
+        total_hint: int | None = None
+        with httpx.Client(timeout=httpx.Timeout(30.0, read=60.0)) as client:
+            while True:
+                params = {**base_params, "p": page}
+                resp = client.get(url, headers=headers, params=params)
+                resp.raise_for_status()
+                payload = resp.json()
 
+                if not payload.get("success", True):
+                    raise RuntimeError(f"Taiji /api/log/ returned error: {payload.get('message')}")
 
-# ────────────────────── JSON 解析 ──────────────────────
+                data = payload.get("data")
+                # 形态 A: {success, data: {items: [...], total: N}}
+                # 形态 B: {success, data: [...], total: N}
+                if isinstance(data, dict):
+                    items = data.get("items") or []
+                    if total_hint is None:
+                        total_hint = data.get("total")
+                elif isinstance(data, list):
+                    items = data
+                    if total_hint is None:
+                        total_hint = payload.get("total")
+                else:
+                    items = []
 
-def _parse_blob_day(payload: dict, *, default_date: str) -> list[dict]:
-    """把单天 blob JSON 展平成 billing rows。
+                if not items:
+                    break
 
-    优先用 payload.date_range.start_at[:10] 作为 date,blob 文件名传入的
-    default_date 仅做 fallback(一致性校验由调用方决定)。
-    """
-    date_str = default_date
-    dr = payload.get("date_range") or {}
-    if isinstance(dr, dict):
-        start_at = dr.get("start_at") or ""
-        if isinstance(start_at, str) and len(start_at) >= 10:
-            date_str = start_at[:10]
+                all_items.extend(items)
 
-    taiji_root = payload.get("taiji")
-    if not isinstance(taiji_root, dict):
-        return []
+                if len(items) < page_size:
+                    break
+                if total_hint is not None and len(all_items) >= total_hint:
+                    break
 
-    rows: list[dict] = []
-    for username, tokens in taiji_root.items():
-        if not isinstance(tokens, dict):
-            continue
-        u = (username or "").strip() or "_"
-        for token_name, token_blob in tokens.items():
-            if not isinstance(token_blob, dict):
-                continue
-            tn = (token_name or "").strip() or "_"
-            project_id = f"{u}:{tn}"
-            key_display = token_blob.get("key_display") or ""
-            details = token_blob.get("details") or {}
-            if not isinstance(details, dict) or not details:
-                # token 当天 0 调用,details 为空。不入库 —— billing_summary 只关心
-                # 有费用/用量的明细;空 token 仍可通过 token_usage / 项目自动发现去捕捉
-                continue
+                page += 1
+                # 防御：避免坏掉的接口让我们无限翻页
+                if page > 20000:
+                    logger.warning("Taiji pagination hit safety cap at page %d", page)
+                    break
 
-            for model_name, m in details.items():
-                if not isinstance(m, dict):
-                    continue
-                cost = _to_float(m.get("cost"))
-                prompt_tokens = _to_int(m.get("prompt_tokens"))
-                completion_tokens = _to_int(m.get("completion_tokens"))
-                count = _to_int(m.get("count"))
-                cache_hit = _to_int(m.get("cache_hit_tokens"))
-                total_tokens = prompt_tokens + completion_tokens
-
-                additional = {
-                    "key_display": key_display,
-                    "request_count": count,
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                }
-                if cache_hit:
-                    additional["cache_hit_tokens"] = cache_hit
-
-                rows.append({
-                    "date": date_str,
-                    "project_id": project_id,
-                    "project_name": project_id,
-                    "product": model_name or "unknown",
-                    "usage_type": "",
-                    "region": None,
-                    "cost_type": "regular",
-                    "cost": round(cost, 6),
-                    "usage_quantity": float(total_tokens),
-                    "usage_unit": "tokens",
-                    "currency": "USD",
-                    "currency_conversion_rate": 1.0,
-                    "tags": {},
-                    "additional_info": additional,
-                })
-
-    return rows
+        return all_items
 
 
-def _to_float(v) -> float:
-    if v is None:
-        return 0.0
-    try:
-        return float(v)
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _to_int(v) -> int:
-    if v is None:
-        return 0
-    try:
-        return int(v)
-    except (ValueError, TypeError):
-        try:
-            return int(float(v))
-        except (ValueError, TypeError):
-            return 0
-
-
-# ────────────────────── Push 路径辅助(保留给 /api/metering/taiji/ingest) ──────────────────────
-#
-# 下面的 _date_range_to_unix / _aggregate_logs 等给 sync_service.reaggregate_from_taiji_raw
-# 用,从 billing_raw_taiji 重算 billing_summary + token_usage。Pull 路径(blob)不再依赖,
-# 但保留以免破坏 Push ingest 流程。
+# ────────────────────── 辅助：聚合 ──────────────────────
 
 def _date_range_to_unix(start_date: str, end_date: str) -> tuple[int, int]:
-    """[start, end] 闭区间日期 → unix 秒区间 [start, end+1d)。"""
+    """将 [start_date, end_date] 转成 unix 秒区间 [start, end+1d)。"""
     sd = dt.date.fromisoformat(start_date)
     ed = dt.date.fromisoformat(end_date) + dt.timedelta(days=1)
+    # 注意：taiji 的 created_at 通常是 UTC unix 秒；线上若走北京时区可调此处
     start_ts = int(dt.datetime(sd.year, sd.month, sd.day, tzinfo=dt.timezone.utc).timestamp())
     end_ts = int(dt.datetime(ed.year, ed.month, ed.day, tzinfo=dt.timezone.utc).timestamp())
     return start_ts, end_ts
@@ -261,13 +191,11 @@ def _date_range_to_unix(start_date: str, end_date: str) -> tuple[int, int]:
 
 def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
     """
-    将 taiji 原始请求日志(billing_raw_taiji 中的行)按
-    (date, token_id, token_name, username, model, channel) 聚合成 billing row。
+    将 taiji 原始请求日志按 (date, token_id, model_name, channel_name) 聚合成 billing row。
 
-    Push 模式下仍然按 token_id 作为 project_id(老约定保留),与 Pull 模式
-    的 "username:token_name" 不一定互通 —— 同一 cloud_account 不应同时启用两条
-    路径(seed 脚本里 is_active 默认 False 强制走 Push,Pull 启用前请确认 Push 不再供数)。
+    同时为每行附带 `_token_usage` 子字典（sync_service 会据此再做一次 token_usage 表聚合）。
     """
+    # (date, token_id, token_name, username, model, channel) → 累加器
     bucket: dict[tuple, dict] = defaultdict(lambda: {
         "quota_sum": 0,
         "prompt_tokens": 0,
@@ -296,6 +224,7 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
         acc["completion_tokens"] += int(log.get("completion_tokens") or 0)
         acc["request_count"] += 1
         acc["total_use_time_ms"] += int(log.get("use_time") or 0)
+        # cache 存在 other JSON 里
         cache = _extract_cache_tokens(log.get("other"))
         acc["cache_tokens"] += cache
 
@@ -313,6 +242,7 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
             "product": model_name,
             "usage_type": channel or "",
             "region": channel or None,
+            # billing_data.cost_type NOT NULL；taiji 全部按常规消费记账。
             "cost_type": "regular",
             "cost": round(cost_usd, 6),
             "usage_quantity": float(total_tokens),
@@ -333,18 +263,19 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
                     if acc["request_count"] else 0
                 ),
             },
+            # ↓ sync_service 会读取此字段再写 token_usage 表；不进 billing_data
             "_token_usage": {
                 "date": date,
                 "model_id": model_name,
                 "model_name": model_name,
-                "region": None,
+                "region": None,  # token_usage 按 (date, ds, model) 聚合，不按 channel 拆
                 "request_count": acc["request_count"],
                 "input_tokens": acc["prompt_tokens"],
                 "output_tokens": acc["completion_tokens"],
                 "cache_read_tokens": acc["cache_tokens"],
                 "cache_write_tokens": 0,
                 "total_tokens": total_tokens,
-                "input_cost": 0.0,
+                "input_cost": 0.0,    # taiji 不区分拆分成本，总额记入 total_cost
                 "output_cost": 0.0,
                 "total_cost": round(cost_usd, 6),
                 "currency": "USD",
@@ -356,6 +287,7 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
 
 
 def _render_project_name(username: str, token_name: str, token_id: int) -> str:
+    """名字格式：'username:token_name'；兜底加 token_id 后缀防重名。"""
     u = (username or "").strip()
     tn = (token_name or "").strip()
     if u and tn:
@@ -368,6 +300,7 @@ def _render_project_name(username: str, token_name: str, token_id: int) -> str:
 
 
 def _guess_channel_from_other(other_raw) -> str | None:
+    """有些 new-api 部署 channel_name 为 null，channel id 在 other.admin_info.use_channel 里。"""
     parsed = _parse_other(other_raw)
     if not parsed:
         return None
@@ -388,6 +321,7 @@ def _extract_cache_tokens(other_raw) -> int:
 
 
 def _parse_other(other_raw) -> dict | None:
+    """other 字段可能是字符串化 JSON，也可能已经是 dict。"""
     if not other_raw:
         return None
     if isinstance(other_raw, dict):

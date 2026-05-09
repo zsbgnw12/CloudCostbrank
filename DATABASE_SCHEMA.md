@@ -55,7 +55,7 @@ operation_logs (独立)
 |---|---|---|---|
 | id | SERIAL | PK | |
 | name | VARCHAR(100) | NOT NULL | 别名，如"主力AWS账号" |
-| provider | VARCHAR(10) | NOT NULL | `aws` / `gcp` / `azure` / `taiji` |
+| provider | VARCHAR(10) | NOT NULL | `aws` / `gcp` / `azure` |
 | secret_data | TEXT | NOT NULL | Fernet(AES) 加密后的 JSON |
 | is_active | BOOLEAN | DEFAULT TRUE | |
 | created_at | TIMESTAMPTZ | DEFAULT NOW() | |
@@ -69,8 +69,6 @@ operation_logs (独立)
 {"service_account_json": { ... }}
 // Azure
 {"tenant_id": "...", "client_id": "...", "client_secret": "..."}
-// Taiji (Pull 路径,主):每日 Azure Blob 预聚合 JSON。SAS 必须是容器级 sr=c, sp=r。
-{"blob_sas_url": "https://<acc>.blob.core.windows.net/<container>?sp=r&sv=...&sr=c&sig=..."}
 ```
 
 **关联:** → data_sources.cloud_account_id
@@ -99,8 +97,6 @@ operation_logs (独立)
 {"account_id": null, "end_date": null}
 // Azure
 {"subscription_id": "45d7a360-...", "collect_mode": "subscription", "cost_metric": "ActualCost"}
-// Taiji (Pull 路径):timezone_tag 决定文件名后缀(默认 UTC+0);可选项 filename_template / request_timeout_sec。
-{"timezone_tag": "UTC+0"}
 ```
 
 **关联:** → billing_summary.data_source_id, sync_logs.data_source_id, projects.data_source_id, resource_inventory.data_source_id
@@ -135,7 +131,7 @@ operation_logs (独立)
 | id | SERIAL | PK | |
 | name | VARCHAR(200) | NOT NULL | 项目显示名 |
 | provider | VARCHAR(10) | NOT NULL | `aws` / `gcp` / `azure` |
-| external_project_id | VARCHAR(200) | NOT NULL | GCP project.id / AWS account_id / Azure subscription_id / Taiji `<username>:<token_name>` |
+| external_project_id | VARCHAR(200) | NOT NULL | GCP project.id / AWS account_id / Azure subscription_id |
 | data_source_id | INT | FK → data_sources.id | |
 | category_id | INT | FK → categories.id | |
 | customer_id | INT | FK → customers.id | |
