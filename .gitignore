@@ -13,3 +13,6 @@ venv/
 # Local Azure Container App exports (may contain secrets)
 azure-containerapp-*.yaml
 aca-patched-*.yaml
+
+# Taiji daily blob samples (real customer data — stay local only)
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_UTC*.json

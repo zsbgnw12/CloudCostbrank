@@ -385,9 +385,13 @@ def _resolve_supply_source_for_taiji(session, data_source_id: int) -> tuple[int,
 
 def auto_create_taiji_projects(rows: list[dict], data_source_id: int) -> int:
     """
-    自动发现 Taiji token：每次同步把新出现的 token_id（= project_id）建成 Project。
+    自动发现 Taiji token:每次同步把新出现的 project_id 建成 Project。
 
-    归属决策见 `_resolve_supply_source_for_taiji`：优先用户建的 taiji 货源，
+    project_id 形态:
+      - Pull 路径(blob):"<username>:<token_name>"(详见 collectors/taiji_collector._parse_blob_day)
+      - Push 路径(billing_raw_taiji):token_id 字符串(老约定;详见 _aggregate_logs)
+
+    归属决策见 `_resolve_supply_source_for_taiji`:优先用户建的 taiji 货源,
     歧义时退回"未分配资源组"。
     """
     if not rows:

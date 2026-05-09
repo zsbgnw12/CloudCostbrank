@@ -15,7 +15,6 @@ from app.services.sync_service import (
     refresh_daily_summary,
     auto_create_gcp_projects,
     auto_create_taiji_projects,
-    upsert_token_usage_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,18 +116,15 @@ def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *, celer
                 logger.warning("Failed to auto-create GCP projects: %s", e)
 
         if provider == "taiji":
+            # 与 GCP 同构:每天发现新 token (project_id) 自动建 standby Project,
+            # 后续运维再分配客户/货源。token_usage 旁路移除 — taiji 数据形态完全
+            # 对齐 AWS/GCP/Azure,只走 billing_summary。
             try:
                 created = auto_create_taiji_projects(rows, data_source_id=data_source_id)
                 if created:
                     logger.info("Auto-created %d new Taiji token project(s)", created)
             except Exception as e:
                 logger.warning("Failed to auto-create taiji projects: %s", e)
-            try:
-                tu_count = upsert_token_usage_rows(rows, provider=provider, data_source_id=data_source_id)
-                if tu_count:
-                    logger.info("Upserted %d token_usage rows for taiji ds=%d", tu_count, data_source_id)
-            except Exception as e:
-                logger.warning("Failed to upsert token_usage for taiji: %s", e)
 
         try:
             refresh_daily_summary(start_date, end_date)
