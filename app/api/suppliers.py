@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal, require_roles
 from app.auth.principal import Principal
-from app.auth.scope import extract_providers_from_roles, has_full_access
+from app.auth.scope import ensure_provider_visible, extract_providers_from_roles, has_full_access
 from app.database import get_db
 from app.models.entity import Entity
 from app.models.project import Project
@@ -333,16 +333,21 @@ async def list_entities(
     "/supply-sources/{supply_source_id}/entities",
     response_model=EntityRead,
     status_code=201,
-    dependencies=[Depends(require_roles("cloud_admin"))],
 )
 async def create_entity(
     supply_source_id: int,
     body: EntityCreate,
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
+    """新增主体。
+    权限：cloud_admin / cloud_ops 全开；cloud_<provider> 仅能在自己 provider 的货源下加。
+    供应商/货源本身的增删仍是 cloud_admin（那是跨云全局元数据）。
+    """
     ss = await db.get(SupplySource, supply_source_id)
     if not ss:
         raise HTTPException(404, "货源不存在")
+    ensure_provider_visible(principal, ss.provider)
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "名称不能为空")
@@ -417,16 +422,19 @@ async def list_all_entities(
 @router.patch(
     "/entities/{entity_id}",
     response_model=EntityRead,
-    dependencies=[Depends(require_roles("cloud_admin"))],
 )
 async def update_entity(
     entity_id: int,
     body: EntityUpdate,
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
     e = await db.get(Entity, entity_id)
     if not e:
         raise HTTPException(404, "主体不存在")
+    ss = await db.get(SupplySource, e.supply_source_id)
+    if ss is not None:
+        ensure_provider_visible(principal, ss.provider)
     if body.name is not None:
         name = body.name.strip()
         if not name:
@@ -455,12 +463,18 @@ async def update_entity(
 @router.delete(
     "/entities/{entity_id}",
     status_code=204,
-    dependencies=[Depends(require_roles("cloud_admin"))],
 )
-async def delete_entity(entity_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_entity(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
     e = await db.get(Entity, entity_id)
     if not e:
         raise HTTPException(404, "主体不存在")
+    ss = await db.get(SupplySource, e.supply_source_id)
+    if ss is not None:
+        ensure_provider_visible(principal, ss.provider)
     # Project.entity_id 已是 ON DELETE SET NULL，主体下若仍有服务账号会被打回未分配。
     # 但为防止误删，要求先 detach：服务账号还挂着就报 409，保持与 supplier/supply-source 一致的安全策略。
     cnt = (
