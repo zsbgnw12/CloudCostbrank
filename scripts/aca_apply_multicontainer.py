@@ -2,15 +2,20 @@
 """
 Patch Azure Container App JSON export for: API + Celery worker + Celery beat (single replica).
 
-Usage (from repo cloudcost/ or anywhere with az logged in):
-  az containerapp show -g CloudCost -n cloudcost-brank -o json | python scripts/aca_apply_multicontainer.py > /tmp/patch.yaml
+Usage:
+  az containerapp show -g CloudCost -n cloudcost-brank -o json \
+    | python scripts/aca_apply_multicontainer.py [--image <full-image-ref>] > /tmp/patch.yaml
   az containerapp update -g CloudCost -n cloudcost-brank --yaml /tmp/patch.yaml
+
+--image：可选；不传则沿用线上当前镜像（仅刷 command/probes/scale 配置）。
+         CICD 里传入新构建的镜像 tag，让镜像与 command 在同一次 update 里原子刷新。
 
 Requires: PyYAML (pip install -r scripts/requirements-aca.txt)
 """
 
 from __future__ import annotations
 
+import argparse
 import copy
 import datetime as dt
 import json
@@ -107,7 +112,7 @@ def _build_containers(base_env: list, image: str) -> list[dict]:
     return [api, worker, beat]
 
 
-def patch_resource(data: dict) -> dict:
+def patch_resource(data: dict, image_override: str | None = None) -> dict:
     out = copy.deepcopy(data)
     out.pop("id", None)
     out.pop("systemData", None)
@@ -124,9 +129,11 @@ def patch_resource(data: dict) -> dict:
         raise SystemExit("Invalid export: no template.containers")
 
     first = containers[0]
-    image = first.get("image")
+    # 选镜像优先级：CLI --image > 线上当前镜像。CICD 必传 --image，把新构建好的
+    # ACR tag 灌进来，保证 command/env 配置和镜像在一次 az update 里原子推到生产。
+    image = image_override or first.get("image")
     if not image:
-        raise SystemExit("First container has no image")
+        raise SystemExit("No image provided (use --image) and current container has none")
     env = first.get("env") or []
 
     tmpl["containers"] = _build_containers(env, image)
@@ -152,6 +159,13 @@ def patch_resource(data: dict) -> dict:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--image",
+        help="完整镜像引用，如 acr.io/cloudcost:20260511-abc1234；省略则沿用线上当前镜像",
+    )
+    args = parser.parse_args()
+
     try:
         import yaml
     except ImportError:
@@ -162,7 +176,7 @@ def main() -> None:
         raise SystemExit(1)
 
     data = json.load(sys.stdin)
-    patched = patch_resource(data)
+    patched = patch_resource(data, image_override=args.image)
     # default_flow_style=False for readability; Azure accepts this
     yaml.safe_dump(
         patched,

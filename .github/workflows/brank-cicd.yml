@@ -43,12 +43,30 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Update Container App (all containers)
+      # Treat command / env / probes / resources / image as one atomic config that lives in
+      # `scripts/aca_apply_multicontainer.py`. Every push regenerates the full YAML from
+      # the script and applies it via `az containerapp update --yaml`. This guarantees:
+      #   - api 容器 command 永远是「python -m alembic upgrade head && uvicorn」(自动跑迁移)
+      #   - worker / beat 永远是各自的 celery 命令
+      #   - 任何配置漂移（手动 Portal 改、误改 revision）会在下一次 push 时被复位
+      #   - 配置变更进 git，可 diff、可 review、可回滚
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML for ACA patch script
+        run: pip install -r scripts/requirements-aca.txt
+
+      - name: Apply full Container App config (image + command + probes)
         run: |
-          for C in api celery-worker celery-beat; do
-            az containerapp update \
-              --name "$CONTAINER_APP" \
-              --resource-group "$RESOURCE_GROUP" \
-              --container-name "$C" \
-              --image "$IMAGE"
-          done
+          az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CONTAINER_APP" \
+            -o json \
+            | python scripts/aca_apply_multicontainer.py --image "$IMAGE" \
+            > /tmp/aca-patch.yaml
+          az containerapp update \
+            --name "$CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --yaml /tmp/aca-patch.yaml
