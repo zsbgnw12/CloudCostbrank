@@ -45,11 +45,15 @@ def _build_containers(base_env: list, image: str) -> list[dict]:
         # 启动顺序：alembic upgrade head → uvicorn。
         # - alembic 幂等：schema 已是最新就是 no-op，几百毫秒返回；
         # - 只在 api 容器跑，celery worker/beat 不参与（避免三容器并发跑迁移竞锁）；
-        # - 用 exec 替换 shell 进程，让信号(SIGTERM 优雅停机)正确转发到 uvicorn。
+        # - 用 `python -m alembic` 而非裸 `alembic`：前者把 cwd 加进 sys.path，
+        #   env.py 的 `from app.database import Base` 才能解析；alembic.ini 里
+        #   也加了 prepend_sys_path = . 兜底，双保险；
+        # - 用 exec 替换 shell 进程，让 SIGTERM 正确转到 uvicorn 而非 sh，
+        #   优雅停机才不会被强杀。
         "command": [
             "/bin/sh",
             "-c",
-            "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000",
+            "python -m alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000",
         ],
         "env": env_block(),
         "probes": [
