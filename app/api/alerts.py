@@ -375,11 +375,12 @@ async def rule_status(
 ):
     """Return progress status for ALL active rules.
 
-    支持 5 种 threshold_type:
+    支持 6 种 threshold_type:
       - daily_absolute / monthly_budget / daily_increase_pct → 单 project,触发 = 超阈值
       - monthly_minimum_commitment   → 单 project,触发(坏)= 低于承诺
       - account_lifetime_quota       → 单 project,actual = 全期累计
       - monthly_budget_multi         → 多 project(target_id 逗号分隔),actual = 该组本月合计
+      - yearly_budget_multi          → 多 project(target_id 逗号分隔),actual = 该组本年合计
     """
     if month:
         year, mon = int(month[:4]), int(month[5:7])
@@ -389,6 +390,8 @@ async def rule_status(
 
     month_start = dt.date(year, mon, 1)
     month_end = dt.date(year + 1, 1, 1) if mon == 12 else dt.date(year, mon + 1, 1)
+    year_start = dt.date(year, 1, 1)
+    year_end = dt.date(year + 1, 1, 1)
     yesterday = dt.date.today() - dt.timedelta(days=1)
 
     # 拉所有 active 规则(不再限 target_type='project',否则丢 multi 等新类型)
@@ -452,6 +455,18 @@ async def rule_status(
     )
     lifetime_map: dict[str, Decimal] = {r.project_id: r.total for r in lifetime_result}
 
+    # Per-project yearly cost (当年累计 — 给 yearly_budget_multi 用)
+    yearly_result = await db.execute(
+        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
+        .where(
+            BillingData.date >= year_start,
+            BillingData.date < year_end,
+            BillingData.project_id.in_(project_ids),
+        )
+        .group_by(BillingData.project_id)
+    )
+    yearly_map: dict[str, Decimal] = {r.project_id: r.total for r in yearly_result}
+
     daily_result = await db.execute(
         select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
         .where(
@@ -481,6 +496,13 @@ async def rule_status(
         if rule.threshold_type == "monthly_budget_multi":
             # 多项目本月合计
             actual = float(sum(monthly_map.get(p, Decimal("0")) for p in pids))
+            triggered = actual >= threshold
+            display_name = f"{len(pids)} 个项目"
+            display_provider = "multi"
+            display_pid = rule.target_id or ""
+        elif rule.threshold_type == "yearly_budget_multi":
+            # 多项目本年合计
+            actual = float(sum(yearly_map.get(p, Decimal("0")) for p in pids))
             triggered = actual >= threshold
             display_name = f"{len(pids)} 个项目"
             display_provider = "multi"

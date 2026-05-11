@@ -54,6 +54,8 @@ def check_all_alerts():
                     _check_account_lifetime_quota(session, rule)
                 elif rule.threshold_type == "monthly_budget_multi":
                     _check_monthly_budget_multi(session, rule, today)
+                elif rule.threshold_type == "yearly_budget_multi":
+                    _check_yearly_budget_multi(session, rule, today)
                 else:
                     actual_value = _evaluate_rule(session, rule, yesterday, today)
                     if actual_value is not None and actual_value >= rule.threshold_value:
@@ -136,6 +138,49 @@ def _check_monthly_budget_multi(session: Session, rule: AlertRule, today: dt.dat
     message = (
         f"告警 [{rule.name}]: 多项目月费用合计超预算!"
         f" {proj_desc} 本月累计 ${used_f:.2f},预算 ${quota:.2f} (使用率 {pct:.1f}%)"
+    )
+    _trigger_alert(session, rule, Decimal(str(round(used_f, 2))), custom_message=message)
+
+
+def _check_yearly_budget_multi(session: Session, rule: AlertRule, today: dt.date):
+    """多 project 年费用合计配额告警（monthly_budget_multi 的年版）。
+
+    rule 字段含义：
+      - target_type     : "project_group"（同月版）
+      - target_id       : 多个 project.external_project_id 用逗号分隔
+      - threshold_value : 该组 project 当年预算合计 USD
+
+    时间窗：今年 1/1 ~ 今天（含），逐日累加。年中触发后续不会重复跑相同
+    阈值（_trigger_alert 不去重，由调用方控制；调度器一天跑一次即可）。
+    """
+    quota = float(rule.threshold_value or 0)
+    if quota <= 0:
+        return
+    raw_ids = (rule.target_id or "").strip()
+    if not raw_ids:
+        return
+    project_ids = [p.strip() for p in raw_ids.split(",") if p.strip()]
+    if not project_ids:
+        return
+
+    year_start = today.replace(month=1, day=1)
+    year_end = today + dt.timedelta(days=1)
+
+    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+        BillingData.project_id.in_(project_ids),
+        BillingData.date >= year_start,
+        BillingData.date < year_end,
+    ).scalar() or Decimal("0")
+    used_f = float(used)
+
+    if used_f < quota:
+        return
+
+    pct = (used_f / quota * 100) if quota else 0
+    proj_desc = f"{len(project_ids)} 个项目({', '.join(project_ids[:3])}{'...' if len(project_ids) > 3 else ''})"
+    message = (
+        f"告警 [{rule.name}]: 多项目年费用合计超预算!"
+        f" {proj_desc} {today.year} 年累计 ${used_f:.2f},年预算 ${quota:.2f} (使用率 {pct:.1f}%)"
     )
     _trigger_alert(session, rule, Decimal(str(round(used_f, 2))), custom_message=message)
 
