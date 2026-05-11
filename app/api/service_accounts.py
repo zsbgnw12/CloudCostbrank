@@ -970,6 +970,108 @@ async def bulk_assign(
     )
 
 
+# ─── Bulk reassign to another Entity (same supply_source) ────
+
+class BulkAssignEntityRequest(BaseModel):
+    account_ids: list[int]
+    # null = 清空主体（accounts.entity_id 设为 NULL），非空 = 切到指定主体
+    target_entity_id: int | None = None
+
+    @field_validator("account_ids")
+    @classmethod
+    def _non_empty(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("account_ids 不能为空")
+        return list(dict.fromkeys(v))
+
+
+class BulkAssignEntitySkip(BaseModel):
+    account_id: int
+    reason: str
+
+
+class BulkAssignEntityResponse(BaseModel):
+    moved: int
+    skipped: list[BulkAssignEntitySkip]
+    target_entity_id: int | None
+    target_entity_name: str | None = None
+
+
+@router.post(
+    "/bulk-assign-entity",
+    response_model=BulkAssignEntityResponse,
+)
+async def bulk_assign_entity(
+    body: BulkAssignEntityRequest,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """批量把服务账号挂到/挪离主体。
+
+    规则：
+      - 主体绑定 supply_source；target_entity_id 非空时账号必须在该
+        主体所属 supply_source 下，跨 supply_source 一律跳过。
+      - target_entity_id=null 表示清空（设回"未分配主体"）。
+      - 已在目标主体（或 entity_id 已是 null 且目标也是 null）的账号跳过。
+      - 整体事务：任一成功则一起 commit；中途异常整批回滚。
+    """
+    for aid in body.account_ids:
+        await _scope_check_account(db, principal, aid)
+
+    target_entity: Entity | None = None
+    target_ss_id: int | None = None
+    if body.target_entity_id is not None:
+        target_entity = await db.get(Entity, body.target_entity_id)
+        if not target_entity:
+            raise HTTPException(404, f"目标主体 id={body.target_entity_id} 不存在")
+        ss = await db.get(SupplySource, target_entity.supply_source_id)
+        if ss is not None:
+            ensure_provider_visible(principal, ss.provider)
+        target_ss_id = target_entity.supply_source_id
+
+    rows = (
+        await db.execute(select(Project).where(Project.id.in_(body.account_ids)))
+    ).scalars().all()
+    found_map = {p.id: p for p in rows}
+
+    moved = 0
+    skipped: list[BulkAssignEntitySkip] = []
+
+    for acc_id in body.account_ids:
+        p = found_map.get(acc_id)
+        if not p:
+            skipped.append(BulkAssignEntitySkip(account_id=acc_id, reason="不存在"))
+            continue
+
+        if target_entity is None:
+            # 清空
+            if p.entity_id is None:
+                skipped.append(BulkAssignEntitySkip(account_id=acc_id, reason="已是未分配主体"))
+                continue
+            p.entity_id = None
+            moved += 1
+        else:
+            if p.supply_source_id != target_ss_id:
+                skipped.append(BulkAssignEntitySkip(
+                    account_id=acc_id,
+                    reason="账号与目标主体不在同一货源下",
+                ))
+                continue
+            if p.entity_id == target_entity.id:
+                skipped.append(BulkAssignEntitySkip(account_id=acc_id, reason="已在目标主体下"))
+                continue
+            p.entity_id = target_entity.id
+            moved += 1
+
+    await db.commit()
+    return BulkAssignEntityResponse(
+        moved=moved,
+        skipped=skipped,
+        target_entity_id=body.target_entity_id,
+        target_entity_name=target_entity.name if target_entity else None,
+    )
+
+
 @router.post(
     "/{account_id}/suspend",
     response_model=ServiceAccountDetail,
