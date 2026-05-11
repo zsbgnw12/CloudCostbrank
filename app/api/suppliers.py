@@ -5,7 +5,9 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_roles
+from app.auth.dependencies import get_current_principal, require_roles
+from app.auth.principal import Principal
+from app.auth.scope import extract_providers_from_roles, has_full_access
 from app.database import get_db
 from app.models.entity import Entity
 from app.models.project import Project
@@ -144,14 +146,28 @@ async def delete_supplier(supplier_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
 
+def _provider_scope(principal: Principal) -> set[str] | None:
+    """None = 全量(admin/ops)；set = 限定到这些 provider；空 set = 完全无权见任何 provider。"""
+    if has_full_access(principal):
+        return None
+    return set(extract_providers_from_roles(principal.roles))
+
+
 @router.get("/{supplier_id}/supply-sources", response_model=list[SupplySourceRead])
-async def list_supply_sources(supplier_id: int, db: AsyncSession = Depends(get_db)):
+async def list_supply_sources(
+    supplier_id: int,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
     s = await db.get(Supplier, supplier_id)
     if not s:
         raise HTTPException(404, "供应商不存在")
+    scope = _provider_scope(principal)
     ss_rows = (await db.execute(select(SupplySource).where(SupplySource.supplier_id == supplier_id))).scalars().all()
     out: list[SupplySourceRead] = []
     for ss in ss_rows:
+        if scope is not None and ss.provider not in scope:
+            continue
         n = (
             await db.execute(select(func.count()).select_from(Project).where(Project.supply_source_id == ss.id))
         ).scalar_one()
@@ -217,13 +233,19 @@ async def delete_supply_source(
 async def list_all_supply_sources(
     supplier_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
-    """可选按供应商筛选，供下拉使用。"""
+    """可选按供应商筛选，供下拉使用。按 visible_providers 过滤(cloud_<provider> 只看本云)。"""
+    scope = _provider_scope(principal)
+    if scope is not None and not scope:
+        return []  # 用户无任何云管角色 → 不返回数据
     stmt = select(SupplySource, Supplier.name.label("supplier_name")).join(
         Supplier, SupplySource.supplier_id == Supplier.id
     )
     if supplier_id is not None:
         stmt = stmt.where(SupplySource.supplier_id == supplier_id)
+    if scope is not None:
+        stmt = stmt.where(SupplySource.provider.in_(scope))
     stmt = stmt.order_by(SupplySource.supplier_id, SupplySource.provider)
     rows = (await db.execute(stmt)).all()
     out: list[SupplySourceRead] = []
@@ -279,10 +301,17 @@ async def _entity_to_read(
 
 
 @router.get("/supply-sources/{supply_source_id}/entities", response_model=list[EntityRead])
-async def list_entities(supply_source_id: int, db: AsyncSession = Depends(get_db)):
+async def list_entities(
+    supply_source_id: int,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
     ss = await db.get(SupplySource, supply_source_id)
     if not ss:
         raise HTTPException(404, "货源不存在")
+    scope = _provider_scope(principal)
+    if scope is not None and ss.provider not in scope:
+        raise HTTPException(403, f"Provider '{ss.provider}' out of scope")
     sup = await db.get(Supplier, ss.supplier_id)
     rows = (
         await db.execute(
@@ -345,8 +374,13 @@ async def list_all_entities(
     supply_source_id: int | None = Query(None),
     supplier_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
 ):
-    """flat 列表，供前端下拉使用。可按 supply_source_id 或 supplier_id 过滤。"""
+    """flat 列表，供前端下拉使用。可按 supply_source_id 或 supplier_id 过滤。
+    按 visible_providers 过滤(cloud_<provider> 只看本云)。"""
+    scope = _provider_scope(principal)
+    if scope is not None and not scope:
+        return []
     stmt = (
         select(Entity, SupplySource, Supplier.name.label("supplier_name"))
         .join(SupplySource, Entity.supply_source_id == SupplySource.id)
@@ -356,6 +390,8 @@ async def list_all_entities(
         stmt = stmt.where(Entity.supply_source_id == supply_source_id)
     if supplier_id is not None:
         stmt = stmt.where(SupplySource.supplier_id == supplier_id)
+    if scope is not None:
+        stmt = stmt.where(SupplySource.provider.in_(scope))
     stmt = stmt.order_by(SupplySource.supplier_id, SupplySource.provider, Entity.name)
     rows = (await db.execute(stmt)).all()
     out: list[EntityRead] = []
