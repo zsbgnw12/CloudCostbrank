@@ -47,6 +47,8 @@ def _to_read(project: Project, ss: SupplySource, su: Supplier) -> ProjectRead:
         supply_source_id=project.supply_source_id,
         provider=ss.provider,
         supplier_name=su.name,
+        entity_id=project.entity_id,
+        entity_name=None,
         external_project_id=project.external_project_id,
         data_source_id=project.data_source_id,
         category_id=project.category_id,

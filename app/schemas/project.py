@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 class ProjectCreate(BaseModel):
     name: str
     supply_source_id: int
+    entity_id: int | None = None
     external_project_id: str
     data_source_id: int | None = None
     category_id: int | None = None
@@ -13,6 +14,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
+    entity_id: int | None = None
     data_source_id: int | None = None
     category_id: int | None = None
     notes: str | None = None
@@ -28,6 +30,8 @@ class ProjectRead(BaseModel):
     supply_source_id: int
     provider: str
     supplier_name: str
+    entity_id: int | None = None
+    entity_name: str | None = None
     external_project_id: str
     data_source_id: int | None
     category_id: int | None

@@ -20,3 +20,4 @@ class SupplySource(Base):
 
     supplier = relationship("Supplier", back_populates="supply_sources")
     projects = relationship("Project", back_populates="supply_source")
+    entities = relationship("Entity", back_populates="supply_source", cascade="all, delete-orphan")

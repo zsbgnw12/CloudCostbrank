@@ -21,6 +21,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     external_project_id: Mapped[str] = mapped_column(String(200), nullable=False)
     supply_source_id: Mapped[int] = mapped_column(ForeignKey("supply_sources.id"), nullable=False)
+    entity_id: Mapped[int | None] = mapped_column(ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)
     data_source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"))
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
     status: Mapped[str] = mapped_column(String(15), default="active")  # active / inactive / standby
@@ -33,6 +34,7 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     supply_source = relationship("SupplySource", back_populates="projects")
+    entity = relationship("Entity", back_populates="projects")
     data_source = relationship("DataSource", back_populates="projects")
     category = relationship("Category", back_populates="projects")
     assignment_logs = relationship("ProjectAssignmentLog", back_populates="project", order_by="ProjectAssignmentLog.created_at")

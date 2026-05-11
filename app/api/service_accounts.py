@@ -25,6 +25,7 @@ from app.database import get_db
 from app.models.billing import BillingData
 from app.models.cloud_account import CloudAccount
 from app.models.data_source import DataSource
+from app.models.entity import Entity
 from app.models.project import Project
 from app.models.project_assignment_log import ProjectAssignmentLog
 from app.models.project_customer_assignment import ProjectCustomerAssignment
@@ -57,6 +58,7 @@ async def _cloud_provider(db: AsyncSession, project: Project) -> str:
 
 class ServiceAccountCreate(BaseModel):
     supply_source_id: int
+    entity_id: int | None = None
     name: str
     external_project_id: str
     secret_data: dict[str, Any] = {}
@@ -84,6 +86,10 @@ class ServiceAccountCreate(BaseModel):
 class ServiceAccountUpdate(BaseModel):
     name: str | None = None
     supply_source_id: int | None = None
+    # entity_id：None 表示「不动」；显式传 0 或 null-via-unset 都不会动。
+    # 传具体 id 则切换主体；前端需要清主体走 entity_id=None + clear_entity=True 模式。
+    entity_id: int | None = None
+    clear_entity: bool = False
     external_project_id: str | None = None
     secret_data: dict[str, Any] | None = None
     notes: str | None = None
@@ -117,6 +123,8 @@ class ServiceAccountListItem(BaseModel):
     supply_source_id: int
     supplier_name: str
     provider: str  # 来自 supply_sources，非 projects 列
+    entity_id: int | None = None
+    entity_name: str | None = None
     external_project_id: str
     status: str
     order_method: str | None = None
@@ -144,6 +152,8 @@ class ServiceAccountDetail(BaseModel):
     supplier_id: int
     supplier_name: str
     provider: str
+    entity_id: int | None = None
+    entity_name: str | None = None
     external_project_id: str
     status: str
     notes: str | None
@@ -358,11 +368,14 @@ async def list_accounts(
             Project.status,
             Project.order_method,
             Project.created_at,
+            Project.entity_id,
+            Entity.name.label("entity_name"),
             SupplySource.provider,
             Supplier.name.label("supplier_name"),
         )
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
+        .outerjoin(Entity, Project.entity_id == Entity.id)
         .where(Project.recycled_at.is_(None))
     )
     # 数据范围:cloud_<provider> 只看本云
@@ -408,6 +421,8 @@ async def list_accounts(
             supply_source_id=r.supply_source_id,
             supplier_name=r.supplier_name,
             provider=r.provider,
+            entity_id=r.entity_id,
+            entity_name=r.entity_name,
             external_project_id=r.external_project_id,
             status=r.status,
             order_method=r.order_method,
@@ -435,6 +450,14 @@ async def create_account(
     # 数据范围:用户的角色必须能管该 supply_source 的 provider
     ensure_provider_visible(principal, cloud)
 
+    # entity_id 校验：主体必须属于本货源
+    entity_id: int | None = None
+    if body.entity_id is not None:
+        ent = await db.get(Entity, body.entity_id)
+        if not ent or ent.supply_source_id != body.supply_source_id:
+            raise HTTPException(400, "entity_id 不属于该货源")
+        entity_id = ent.id
+
     encrypted = encrypt_dict(body.secret_data) if body.secret_data else encrypt_dict({})
     ca = CloudAccount(name=f"{cloud}-{body.name}", provider=cloud, secret_data=encrypted)
     db.add(ca)
@@ -452,6 +475,7 @@ async def create_account(
         name=body.name,
         external_project_id=body.external_project_id,
         supply_source_id=body.supply_source_id,
+        entity_id=entity_id,
         data_source_id=ds.id,
         notes=body.notes,
         order_method=body.order_method,
@@ -464,12 +488,18 @@ async def create_account(
     await db.commit()
 
     su = await db.get(Supplier, ss.supplier_id)
+    ent_name = None
+    if entity_id is not None:
+        ent_obj = await db.get(Entity, entity_id)
+        ent_name = ent_obj.name if ent_obj else None
     return ServiceAccountListItem(
         id=project.id,
         name=project.name,
         supply_source_id=project.supply_source_id,
         supplier_name=su.name if su else "",
         provider=cloud,
+        entity_id=entity_id,
+        entity_name=ent_name,
         external_project_id=project.external_project_id,
         status=project.status,
         order_method=project.order_method,
@@ -642,16 +672,17 @@ async def export_daily_report(
 @router.get("/{account_id}", response_model=ServiceAccountDetail)
 async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
     row = (await db.execute(
-        select(Project, DataSource, CloudAccount, SupplySource, Supplier)
+        select(Project, DataSource, CloudAccount, SupplySource, Supplier, Entity)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .join(Supplier, SupplySource.supplier_id == Supplier.id)
         .outerjoin(DataSource, Project.data_source_id == DataSource.id)
         .outerjoin(CloudAccount, DataSource.cloud_account_id == CloudAccount.id)
+        .outerjoin(Entity, Project.entity_id == Entity.id)
         .where(Project.id == account_id, Project.recycled_at.is_(None))
     )).first()
     if not row:
         raise HTTPException(404, "Service account not found")
-    project, ds, ca, ss, su = row
+    project, ds, ca, ss, su, ent = row
 
     secret_fields: list[str] = []
     if ca:
@@ -682,6 +713,8 @@ async def get_account(account_id: int, db: AsyncSession = Depends(get_db)):
         supplier_id=su.id,
         supplier_name=su.name,
         provider=ss.provider,
+        entity_id=ent.id if ent else None,
+        entity_name=ent.name if ent else None,
         external_project_id=project.external_project_id,
         status=project.status,
         notes=project.notes,
@@ -710,6 +743,8 @@ async def update_account(
     secret_data = data.pop("secret_data", None)
     new_supply_source_id = data.pop("supply_source_id", None)
     customer_codes_payload = data.pop("customer_codes", None)
+    entity_id_payload = data.pop("entity_id", None)  # None=不动；显式 int=切换
+    clear_entity_flag = bool(data.pop("clear_entity", False))
 
     for k, v in data.items():
         if hasattr(project, k):
@@ -734,6 +769,8 @@ async def update_account(
         if dup:
             raise HTTPException(409, "目标货源下已存在相同账号 ID")
         project.supply_source_id = new_supply_source_id
+        # 货源切换：主体一定要清空(主体是 supply_source-scoped 的)
+        project.entity_id = None
         await db.flush()
         if project.data_source_id:
             ds = await db.get(DataSource, project.data_source_id)
@@ -767,6 +804,17 @@ async def update_account(
             if ca:
                 ca.secret_data = encrypt_dict(secret_data)
                 await db.flush()
+
+    # entity_id 写入：clear_entity=True 强制清空；entity_id=int 切换；皆需校验属于当前 supply_source
+    if clear_entity_flag:
+        project.entity_id = None
+        await db.flush()
+    elif entity_id_payload is not None:
+        ent = await db.get(Entity, entity_id_payload)
+        if not ent or ent.supply_source_id != project.supply_source_id:
+            raise HTTPException(400, "entity_id 不属于该货源")
+        project.entity_id = ent.id
+        await db.flush()
 
     # Customer-codes diff + status recompute (full replace semantics).
     if customer_codes_payload is not None:
@@ -900,6 +948,8 @@ async def bulk_assign(
 
         old_ss_id = project.supply_source_id
         project.supply_source_id = target_ss_obj.id
+        # 跨货源：主体强制清空（entity 与 supply_source 绑定）
+        project.entity_id = None
         _log(
             db, project,
             action="reassigned",

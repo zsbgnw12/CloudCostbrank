@@ -14,6 +14,7 @@ from app.models.project_assignment_log import ProjectAssignmentLog
 from app.models.project_customer_assignment import ProjectCustomerAssignment
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
+from app.models.entity import Entity
 from app.models.token_usage import TokenUsage
 from app.models.billing_raw_taiji import BillingRawTaiji
 from app.models.user import User
@@ -41,6 +42,7 @@ __all__ = [
     "ProjectCustomerAssignment",
     "Supplier",
     "SupplySource",
+    "Entity",
     "TokenUsage",
     "BillingRawTaiji",
     "User",

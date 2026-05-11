@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import require_roles
 from app.database import get_db
+from app.models.entity import Entity
 from app.models.project import Project
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
@@ -44,6 +45,28 @@ class SupplySourceRead(BaseModel):
 
 class SupplySourceCreate(BaseModel):
     provider: str  # aws / gcp / azure
+
+
+class EntityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    supply_source_id: int
+    supplier_id: int | None = None
+    supplier_name: str | None = None
+    provider: str | None = None
+    name: str
+    note: str | None = None
+    account_count: int = 0
+
+
+class EntityCreate(BaseModel):
+    name: str
+    note: str | None = None
+
+
+class EntityUpdate(BaseModel):
+    name: str | None = None
+    note: str | None = None
 
 
 @router.get("/", response_model=list[SupplierRead])
@@ -218,3 +241,196 @@ async def list_all_supply_sources(
             )
         )
     return out
+
+
+# ─── Entity（主体）CRUD ─────────────────────────────────────────────────────
+# 层级：suppliers → supply_sources → entities → projects
+# 读放给云角色（前端服务账号列表展示要用），写仅 cloud_admin。
+
+
+async def _entity_to_read(
+    db: AsyncSession,
+    e: Entity,
+    *,
+    supplier_id: int | None = None,
+    supplier_name: str | None = None,
+    provider: str | None = None,
+) -> EntityRead:
+    if supplier_id is None or supplier_name is None or provider is None:
+        ss = await db.get(SupplySource, e.supply_source_id)
+        if ss is not None:
+            provider = ss.provider
+            supplier_id = ss.supplier_id
+            sup = await db.get(Supplier, ss.supplier_id)
+            supplier_name = sup.name if sup else None
+    cnt = (
+        await db.execute(select(func.count()).select_from(Project).where(Project.entity_id == e.id))
+    ).scalar_one()
+    return EntityRead(
+        id=e.id,
+        supply_source_id=e.supply_source_id,
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
+        provider=provider,
+        name=e.name,
+        note=e.note,
+        account_count=int(cnt or 0),
+    )
+
+
+@router.get("/supply-sources/{supply_source_id}/entities", response_model=list[EntityRead])
+async def list_entities(supply_source_id: int, db: AsyncSession = Depends(get_db)):
+    ss = await db.get(SupplySource, supply_source_id)
+    if not ss:
+        raise HTTPException(404, "货源不存在")
+    sup = await db.get(Supplier, ss.supplier_id)
+    rows = (
+        await db.execute(
+            select(Entity).where(Entity.supply_source_id == supply_source_id).order_by(Entity.name)
+        )
+    ).scalars().all()
+    return [
+        await _entity_to_read(
+            db, e,
+            supplier_id=ss.supplier_id,
+            supplier_name=sup.name if sup else None,
+            provider=ss.provider,
+        )
+        for e in rows
+    ]
+
+
+@router.post(
+    "/supply-sources/{supply_source_id}/entities",
+    response_model=EntityRead,
+    status_code=201,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def create_entity(
+    supply_source_id: int,
+    body: EntityCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    ss = await db.get(SupplySource, supply_source_id)
+    if not ss:
+        raise HTTPException(404, "货源不存在")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "名称不能为空")
+    dup = (
+        await db.execute(
+            select(Entity).where(
+                Entity.supply_source_id == supply_source_id, Entity.name == name
+            ).limit(1)
+        )
+    ).scalars().first()
+    if dup:
+        raise HTTPException(409, f"该货源下已存在同名主体「{name}」")
+    note = (body.note or "").strip() or None
+    e = Entity(supply_source_id=supply_source_id, name=name, note=note)
+    db.add(e)
+    await db.commit()
+    await db.refresh(e)
+    sup = await db.get(Supplier, ss.supplier_id)
+    return await _entity_to_read(
+        db, e,
+        supplier_id=ss.supplier_id,
+        supplier_name=sup.name if sup else None,
+        provider=ss.provider,
+    )
+
+
+@router.get("/entities/all", response_model=list[EntityRead])
+async def list_all_entities(
+    supply_source_id: int | None = Query(None),
+    supplier_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """flat 列表，供前端下拉使用。可按 supply_source_id 或 supplier_id 过滤。"""
+    stmt = (
+        select(Entity, SupplySource, Supplier.name.label("supplier_name"))
+        .join(SupplySource, Entity.supply_source_id == SupplySource.id)
+        .join(Supplier, SupplySource.supplier_id == Supplier.id)
+    )
+    if supply_source_id is not None:
+        stmt = stmt.where(Entity.supply_source_id == supply_source_id)
+    if supplier_id is not None:
+        stmt = stmt.where(SupplySource.supplier_id == supplier_id)
+    stmt = stmt.order_by(SupplySource.supplier_id, SupplySource.provider, Entity.name)
+    rows = (await db.execute(stmt)).all()
+    out: list[EntityRead] = []
+    for e, ss, sname in rows:
+        cnt = (
+            await db.execute(select(func.count()).select_from(Project).where(Project.entity_id == e.id))
+        ).scalar_one()
+        out.append(
+            EntityRead(
+                id=e.id,
+                supply_source_id=e.supply_source_id,
+                supplier_id=ss.supplier_id,
+                supplier_name=sname,
+                provider=ss.provider,
+                name=e.name,
+                note=e.note,
+                account_count=int(cnt or 0),
+            )
+        )
+    return out
+
+
+@router.patch(
+    "/entities/{entity_id}",
+    response_model=EntityRead,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def update_entity(
+    entity_id: int,
+    body: EntityUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    e = await db.get(Entity, entity_id)
+    if not e:
+        raise HTTPException(404, "主体不存在")
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, "名称不能为空")
+        if name != e.name:
+            dup = (
+                await db.execute(
+                    select(Entity).where(
+                        Entity.supply_source_id == e.supply_source_id,
+                        Entity.name == name,
+                        Entity.id != entity_id,
+                    ).limit(1)
+                )
+            ).scalars().first()
+            if dup:
+                raise HTTPException(409, f"该货源下已存在同名主体「{name}」")
+            e.name = name
+    if body.note is not None:
+        n = body.note.strip()
+        e.note = n or None
+    await db.commit()
+    await db.refresh(e)
+    return await _entity_to_read(db, e)
+
+
+@router.delete(
+    "/entities/{entity_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def delete_entity(entity_id: int, db: AsyncSession = Depends(get_db)):
+    e = await db.get(Entity, entity_id)
+    if not e:
+        raise HTTPException(404, "主体不存在")
+    # Project.entity_id 已是 ON DELETE SET NULL，主体下若仍有服务账号会被打回未分配。
+    # 但为防止误删，要求先 detach：服务账号还挂着就报 409，保持与 supplier/supply-source 一致的安全策略。
+    cnt = (
+        await db.execute(select(func.count()).select_from(Project).where(Project.entity_id == entity_id))
+    ).scalar_one()
+    if cnt and cnt > 0:
+        raise HTTPException(409, "该主体下仍有服务账号，先解绑或迁移后再删除")
+    await db.delete(e)
+    await db.commit()
