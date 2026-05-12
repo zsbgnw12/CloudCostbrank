@@ -1238,46 +1238,66 @@ async def taiji_from_blob(
         to_create.append((username, token_name, external_id))
         existing.add(external_id)
 
-    encrypted = encrypt_dict({"blob_sas_url": sas_url})
-
-    # Phase 1：批量建 CloudAccount，一次 flush 拿到所有 ca.id
-    cas: list[CloudAccount] = []
-    for username, token_name, _ext in to_create:
-        ca = CloudAccount(
-            name=f"taiji-{token_name}"[:100],
-            provider="taiji",
-            secret_data=encrypted,
+    # 关键设计：整个 supply_source 共享 ONE CloudAccount + ONE DataSource。
+    # 之前每个 (user, token) 建一个独立 DS，每个 DS 都会拉同一份 blob 全量数据，
+    # 由于 billing_summary 唯一约束含 data_source_id，N 个 DS 重复插入 N 份相同数据，
+    # 让单条费用被放大 N 倍。共享 DS 后 collector 一天只拉一次 blob、一份行。
+    shared_ca_name = f"taiji-shared-{body.supply_source_id}"
+    shared_ca = (
+        await db.execute(
+            select(CloudAccount).where(
+                CloudAccount.name == shared_ca_name,
+                CloudAccount.provider == "taiji",
+            ).limit(1)
         )
-        db.add(ca)
-        cas.append(ca)
-    if cas:
-        await db.flush()
+    ).scalars().first()
 
-    # Phase 2：批量建 DataSource（依赖 ca.id），一次 flush 拿到所有 ds.id
-    dses: list[DataSource] = []
-    ds_cfg = {"auto_created": True, "timezone_tag": "UTC+0",
-              "filename_template": "taiji_log_data/{date}_{tz}.json"}
-    for ca, (_u, token_name, _ext) in zip(cas, to_create):
-        ds = DataSource(
-            name=f"ds-taiji-{token_name}"[:100],
-            cloud_account_id=ca.id,
+    encrypted = encrypt_dict({"blob_sas_url": sas_url})
+    ds_cfg = {
+        "auto_created": True,
+        "timezone_tag": "UTC+0",
+        "filename_template": "taiji_log_data/{date}_{tz}.json",
+        "shared": True,
+    }
+    if shared_ca:
+        # SAS 可能轮换：刷新 secret，DS config 保持
+        shared_ca.secret_data = encrypted
+        shared_ds = (
+            await db.execute(
+                select(DataSource).where(DataSource.cloud_account_id == shared_ca.id).limit(1)
+            )
+        ).scalars().first()
+        if shared_ds is None:
+            shared_ds = DataSource(
+                name=f"ds-{shared_ca_name}"[:100],
+                cloud_account_id=shared_ca.id,
+                config=ds_cfg,
+                is_active=True,
+            )
+            db.add(shared_ds)
+            await db.flush()
+    else:
+        shared_ca = CloudAccount(name=shared_ca_name, provider="taiji", secret_data=encrypted)
+        db.add(shared_ca)
+        await db.flush()
+        shared_ds = DataSource(
+            name=f"ds-{shared_ca_name}"[:100],
+            cloud_account_id=shared_ca.id,
             config=ds_cfg,
             is_active=True,
         )
-        db.add(ds)
-        dses.append(ds)
-    if dses:
+        db.add(shared_ds)
         await db.flush()
 
-    # Phase 3：批量建 Project（依赖 ds.id），一次 flush 拿到 project.id 写日志
+    # 一次性批量建 Project，全部指向同一个 shared_ds.id
     projects: list[Project] = []
-    for ds, (_u, token_name, external_id) in zip(dses, to_create):
+    for _u, token_name, external_id in to_create:
         project = Project(
             name=token_name,
             external_project_id=external_id,
             supply_source_id=body.supply_source_id,
             entity_id=target_entity_id,
-            data_source_id=ds.id,
+            data_source_id=shared_ds.id,
             status="active",
         )
         db.add(project)
@@ -1285,9 +1305,8 @@ async def taiji_from_blob(
     if projects:
         await db.flush()
 
-    # Phase 4：写 ProjectAssignmentLog（仅 add，不需要再 flush）
     for project, (username, token_name, _ext) in zip(projects, to_create):
-        _log(db, project, "created", from_status="", to_status="active",
+        _log(project=project, db=db, action="created", from_status="", to_status="active",
              notes=f"taiji-from-blob {snapshot_date}: {username}/{token_name}")
 
     await db.commit()
@@ -1296,6 +1315,220 @@ async def taiji_from_blob(
         skipped=skipped,
         total_parsed=len(pairs),
         snapshot_date=snapshot_date,
+    )
+
+
+# ─── Taiji cleanup duplicates (修复历史每账号独立 DS 造成的重复行) ──────
+
+class TaijiCleanupRequest(BaseModel):
+    supply_source_id: int
+    dry_run: bool = True  # 默认只统计不动数据
+
+
+class TaijiCleanupResponse(BaseModel):
+    dry_run: bool
+    total_data_sources_before: int
+    kept_data_source_id: int | None
+    orphan_data_sources_removed: int
+    orphan_cloud_accounts_removed: int
+    billing_rows_deleted_as_dup: int
+    billing_rows_reassigned_to_kept: int
+    projects_repointed: int
+
+
+@router.post(
+    "/taiji-cleanup-duplicates",
+    response_model=TaijiCleanupResponse,
+    dependencies=[Depends(require_roles("cloud_admin"))],
+)
+async def taiji_cleanup_duplicates(
+    body: TaijiCleanupRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """把某 Taiji supply_source 下"每账号一个独立 CA/DS"的历史结构合并为
+    "整个 supply_source 共享一个 CA/DS"，并去重 billing_summary 重复行。
+
+    操作：
+    1) 找出该 supply_source 下所有 Project 引用过的 data_source_id 集合
+    2) 选 id 最小的 DS 留下作为"shared"，CA 重命名为 taiji-shared-{ssid}
+    3) 把所有 Project 指向 kept DS
+    4) billing_summary：按 (date, project_id, product, usage_type, region, cost_type)
+       去重，只保留 id 最小的一行（删除其他副本）
+    5) 把剩下行的 data_source_id 全部改成 kept DS（不会撞唯一约束因为已去重）
+    6) 删除孤儿 DS 和孤儿 CA（无任何 DS 关联的）
+
+    dry_run=true 只统计、不真正改库；false 才落地。
+    """
+    from sqlalchemy import text
+
+    ss = await db.get(SupplySource, body.supply_source_id)
+    if not ss:
+        raise HTTPException(404, "货源不存在")
+    if ss.provider != "taiji":
+        raise HTTPException(400, "仅 taiji 货源支持此 cleanup")
+
+    # 1) 收集该 supply_source 所有 Project 用过的 data_source_id
+    ds_rows = (
+        await db.execute(
+            select(Project.data_source_id).where(
+                Project.supply_source_id == body.supply_source_id,
+                Project.data_source_id.isnot(None),
+            )
+        )
+    ).scalars().all()
+    ds_ids = sorted(set(int(x) for x in ds_rows if x is not None))
+    if not ds_ids:
+        return TaijiCleanupResponse(
+            dry_run=body.dry_run, total_data_sources_before=0, kept_data_source_id=None,
+            orphan_data_sources_removed=0, orphan_cloud_accounts_removed=0,
+            billing_rows_deleted_as_dup=0, billing_rows_reassigned_to_kept=0,
+            projects_repointed=0,
+        )
+
+    kept_ds_id = ds_ids[0]
+    orphan_ds_ids = [x for x in ds_ids if x != kept_ds_id]
+
+    # 2) 统计 billing 重复情况（不论 dry_run）
+    dup_cnt = (
+        await db.execute(
+            text("""
+                SELECT count(*) FROM billing_data
+                WHERE data_source_id = ANY(:ds_ids)
+                  AND id > (
+                    SELECT min(id) FROM billing_data b2
+                    WHERE b2.data_source_id = ANY(:ds_ids)
+                      AND b2.date = billing_data.date
+                      AND b2.project_id = billing_data.project_id
+                      AND b2.product IS NOT DISTINCT FROM billing_data.product
+                      AND b2.usage_type IS NOT DISTINCT FROM billing_data.usage_type
+                      AND b2.region IS NOT DISTINCT FROM billing_data.region
+                      AND b2.cost_type IS NOT DISTINCT FROM billing_data.cost_type
+                  )
+            """),
+            {"ds_ids": ds_ids},
+        )
+    ).scalar() or 0
+
+    reassign_cnt = (
+        await db.execute(
+            text("SELECT count(*) FROM billing_data WHERE data_source_id = ANY(:other)"),
+            {"other": orphan_ds_ids if orphan_ds_ids else [-1]},
+        )
+    ).scalar() or 0
+
+    projects_repointed_cnt = (
+        await db.execute(
+            text("""
+                SELECT count(*) FROM projects
+                WHERE supply_source_id = :ssid AND data_source_id = ANY(:other)
+            """),
+            {"ssid": body.supply_source_id, "other": orphan_ds_ids if orphan_ds_ids else [-1]},
+        )
+    ).scalar() or 0
+
+    if body.dry_run:
+        return TaijiCleanupResponse(
+            dry_run=True,
+            total_data_sources_before=len(ds_ids),
+            kept_data_source_id=kept_ds_id,
+            orphan_data_sources_removed=len(orphan_ds_ids),
+            orphan_cloud_accounts_removed=len(orphan_ds_ids),  # 估算：1 DS = 1 CA
+            billing_rows_deleted_as_dup=int(dup_cnt),
+            billing_rows_reassigned_to_kept=int(reassign_cnt - dup_cnt),  # 重定向 - 已删
+            projects_repointed=int(projects_repointed_cnt),
+        )
+
+    # ─── 真正执行 ───
+    # 删除重复行（保留每业务 key 下 id 最小的）
+    await db.execute(
+        text("""
+            DELETE FROM billing_data
+            WHERE data_source_id = ANY(:ds_ids)
+              AND id > (
+                SELECT min(id) FROM billing_data b2
+                WHERE b2.data_source_id = ANY(:ds_ids)
+                  AND b2.date = billing_data.date
+                  AND b2.project_id = billing_data.project_id
+                  AND b2.product IS NOT DISTINCT FROM billing_data.product
+                  AND b2.usage_type IS NOT DISTINCT FROM billing_data.usage_type
+                  AND b2.region IS NOT DISTINCT FROM billing_data.region
+                  AND b2.cost_type IS NOT DISTINCT FROM billing_data.cost_type
+              )
+        """),
+        {"ds_ids": ds_ids},
+    )
+
+    # 重定向所有剩余 billing 行到 kept_ds_id
+    await db.execute(
+        text("UPDATE billing_data SET data_source_id = :kept WHERE data_source_id = ANY(:other)"),
+        {"kept": kept_ds_id, "other": orphan_ds_ids if orphan_ds_ids else [-1]},
+    )
+
+    # Project 指向 kept DS
+    await db.execute(
+        text("""
+            UPDATE projects SET data_source_id = :kept
+            WHERE supply_source_id = :ssid AND data_source_id = ANY(:other)
+        """),
+        {"kept": kept_ds_id, "ssid": body.supply_source_id, "other": orphan_ds_ids if orphan_ds_ids else [-1]},
+    )
+
+    # 重命名 kept CA/DS 为 shared 约定名
+    target_name = f"taiji-shared-{body.supply_source_id}"
+    kept_ds = await db.get(DataSource, kept_ds_id)
+    kept_ca_id = kept_ds.cloud_account_id if kept_ds else None
+    if kept_ds:
+        kept_ds.name = f"ds-{target_name}"[:100]
+    if kept_ca_id:
+        kept_ca = await db.get(CloudAccount, kept_ca_id)
+        if kept_ca:
+            kept_ca.name = target_name
+
+    # 收集要删的孤儿 CA（指向这些 DS 的）
+    orphan_ca_rows = (
+        await db.execute(
+            text("SELECT cloud_account_id FROM data_sources WHERE id = ANY(:other)"),
+            {"other": orphan_ds_ids if orphan_ds_ids else [-1]},
+        )
+    ).scalars().all()
+    orphan_ca_ids = sorted(set(int(x) for x in orphan_ca_rows if x is not None))
+
+    # 删孤儿 DS
+    if orphan_ds_ids:
+        await db.execute(
+            text("DELETE FROM data_sources WHERE id = ANY(:other)"),
+            {"other": orphan_ds_ids},
+        )
+
+    # 删完全孤儿的 CA（确保没有其他 DS 还指着）
+    removed_ca_cnt = 0
+    for ca_id in orphan_ca_ids:
+        if ca_id == kept_ca_id:
+            continue
+        still_referenced = (
+            await db.execute(
+                text("SELECT count(*) FROM data_sources WHERE cloud_account_id = :cid"),
+                {"cid": ca_id},
+            )
+        ).scalar() or 0
+        if still_referenced == 0:
+            await db.execute(
+                text("DELETE FROM cloud_accounts WHERE id = :cid"),
+                {"cid": ca_id},
+            )
+            removed_ca_cnt += 1
+
+    await db.commit()
+
+    return TaijiCleanupResponse(
+        dry_run=False,
+        total_data_sources_before=len(ds_ids),
+        kept_data_source_id=kept_ds_id,
+        orphan_data_sources_removed=len(orphan_ds_ids),
+        orphan_cloud_accounts_removed=removed_ca_cnt,
+        billing_rows_deleted_as_dup=int(dup_cnt),
+        billing_rows_reassigned_to_kept=int(reassign_cnt - dup_cnt),
+        projects_repointed=int(projects_repointed_cnt),
     )
 
 
