@@ -1072,61 +1072,92 @@ async def bulk_assign_entity(
     )
 
 
-# ─── Taiji bulk import (snapshot JSON → N service accounts) ──────────────
+# ─── Taiji from-blob discovery (后端自动拉，前端零输入) ──────────────
 
-class TaijiBulkImportRequest(BaseModel):
+class TaijiFromBlobRequest(BaseModel):
     supply_source_id: int
     entity_id: int | None = None
-    # SAS URL（容器级 sr=c，只读 sp=r）—— 后台 collector 按日 GET {date}_UTC+0.json
-    blob_sas_url: str
-    # 日快照 JSON 整段内容（前端文本框粘贴）—— 仅用来抽取 (username, token_name) 列表
-    snapshot_json: dict[str, Any]
-
-    @field_validator("blob_sas_url")
-    @classmethod
-    def _validate_url(cls, v: str) -> str:
-        u = (v or "").strip()
-        if not u.startswith(("http://", "https://")):
-            raise ValueError("blob_sas_url 必须是 http(s) URL")
-        return u
 
 
-class TaijiBulkImportSkip(BaseModel):
+class TaijiFromBlobSkip(BaseModel):
     external_project_id: str
     reason: str
 
 
-class TaijiBulkImportResponse(BaseModel):
+class TaijiFromBlobResponse(BaseModel):
     created: int
-    skipped: list[TaijiBulkImportSkip]
+    skipped: list[TaijiFromBlobSkip]
     total_parsed: int
+    snapshot_date: str | None = None  # 实际成功拉到的快照日期 YYYY-MM-DD
     section_used: str = "taiji"
 
 
+def _taiji_fetch_latest_snapshot(sas_url: str, *, lookback_days: int = 7) -> tuple[str, dict]:
+    """从 SAS 容器尝试拉最近 lookback_days 天里第一个可用的 {date}_UTC+0.json。
+
+    返回 (snapshot_date, payload)；全部 404 抛 HTTPException 400。
+    """
+    import httpx as _httpx
+    from urllib.parse import urlsplit as _urlsplit, urlunsplit as _urlunsplit
+
+    today = dt.date.today()
+    last_err: str | None = None
+    with _httpx.Client(timeout=_httpx.Timeout(30.0, read=60.0)) as client:
+        for d in range(lookback_days + 1):
+            day = today - dt.timedelta(days=d)
+            filename = f"{day.isoformat()}_UTC+0.json"
+            parts = _urlsplit(sas_url)
+            new_path = parts.path.rstrip("/") + "/" + filename
+            url = _urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+            try:
+                resp = client.get(url)
+            except Exception as e:
+                last_err = f"GET {filename} 失败: {e}"
+                continue
+            if resp.status_code == 200:
+                try:
+                    return day.isoformat(), resp.json()
+                except Exception as e:
+                    last_err = f"{filename} 解析 JSON 失败: {e}"
+                    continue
+            if resp.status_code == 404:
+                continue
+            last_err = f"{filename} HTTP {resp.status_code}"
+    raise HTTPException(400, f"Blob 最近 {lookback_days + 1} 天均无可用快照。最后错误: {last_err or '全部 404'}")
+
+
 @router.post(
-    "/taiji-bulk-import",
-    response_model=TaijiBulkImportResponse,
+    "/taiji-from-blob",
+    response_model=TaijiFromBlobResponse,
 )
-async def taiji_bulk_import(
-    body: TaijiBulkImportRequest,
+async def taiji_from_blob(
+    body: TaijiFromBlobRequest,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    """从一份日快照 JSON 里批量发现 (username, token_name) 对，为每对建一个
-    服务账号；secret_data 仅含 blob_sas_url，后续按日由 collector 拉。
+    """新建 Taiji 货源专用：后端从 settings.TAIJI_BLOB_SAS_URL 自动拉最新一天
+    的快照，发现所有 (username, token_name) 对，批量建账号；secret_data 落
+    blob_sas_url，未来由 collector 按日继续拉。
 
     规则：
-      - 只读 JSON 的 "taiji" 顶层 section（其他 section 暂不导入，与"Taiji 货源"语义对齐）
+      - SAS URL 不由前端传入；由 settings.TAIJI_BLOB_SAS_URL 提供（环境变量配置）
+      - supply_source.provider 必须为 "taiji"
+      - 只读 JSON 顶层 "taiji" section
       - external_project_id = "<username>:<token_name>"
-      - 同 supply_source 下已存在的 external_project_id 跳过（幂等再次粘贴）
-      - entity_id 可选；若给了须属于该 supply_source
-      - 创建过程任一失败整批回滚
+      - 同 supply_source 下已存在的跳过（幂等）
+      - 整批一事务，任一失败回滚
     """
+    from app.config import settings
+
+    sas_url = (settings.TAIJI_BLOB_SAS_URL or "").strip()
+    if not sas_url:
+        raise HTTPException(400, "服务端未配置 TAIJI_BLOB_SAS_URL，请先在 Container App 环境变量中设置")
+
     ss = await db.get(SupplySource, body.supply_source_id)
     if not ss:
         raise HTTPException(404, "货源不存在")
     if ss.provider != "taiji":
-        raise HTTPException(400, f"目标货源 provider={ss.provider}，仅 taiji 支持快照批量导入")
+        raise HTTPException(400, f"目标货源 provider={ss.provider}，仅 taiji 支持后端自动发现")
     ensure_provider_visible(principal, ss.provider)
 
     # entity_id 校验
@@ -1137,10 +1168,12 @@ async def taiji_bulk_import(
             raise HTTPException(400, "entity_id 不属于该货源")
         target_entity_id = ent.id
 
-    # 抽取 (username, token_name) 列表
-    taiji_section = body.snapshot_json.get("taiji")
+    # 后端 fetch（同步阻塞）—— 容器内到 Azure Blob 通常在 100ms~2s，可接受
+    snapshot_date, snapshot_json = _taiji_fetch_latest_snapshot(sas_url)
+
+    taiji_section = snapshot_json.get("taiji") if isinstance(snapshot_json, dict) else None
     if not isinstance(taiji_section, dict):
-        raise HTTPException(400, "JSON 中缺少 taiji section（顶层 'taiji' key 不存在或不是对象）")
+        raise HTTPException(500, f"快照 {snapshot_date}_UTC+0.json 缺少 taiji section")
 
     pairs: list[tuple[str, str]] = []
     for username, tokens in taiji_section.items():
@@ -1156,9 +1189,8 @@ async def taiji_bulk_import(
             pairs.append((u, tn))
 
     if not pairs:
-        return TaijiBulkImportResponse(created=0, skipped=[], total_parsed=0)
+        return TaijiFromBlobResponse(created=0, skipped=[], total_parsed=0, snapshot_date=snapshot_date)
 
-    # 已有 external_project_id 的集合（同货源内）—— 用于幂等跳过
     existing_rows = (
         await db.execute(
             select(Project.external_project_id).where(
@@ -1169,18 +1201,17 @@ async def taiji_bulk_import(
     existing = set(existing_rows)
 
     created = 0
-    skipped: list[TaijiBulkImportSkip] = []
+    skipped: list[TaijiFromBlobSkip] = []
 
     for username, token_name in pairs:
         external_id = f"{username}:{token_name}"
         if external_id in existing:
-            skipped.append(TaijiBulkImportSkip(
+            skipped.append(TaijiFromBlobSkip(
                 external_project_id=external_id, reason="该货源下已存在同 ID 的账号",
             ))
             continue
 
-        # 与单建 create_account 流程一致：CloudAccount → DataSource → Project，共享同一 SAS
-        encrypted = encrypt_dict({"blob_sas_url": body.blob_sas_url})
+        encrypted = encrypt_dict({"blob_sas_url": sas_url})
         ca = CloudAccount(name=f"taiji-{token_name}"[:100], provider="taiji", secret_data=encrypted)
         db.add(ca)
         await db.flush()
@@ -1207,15 +1238,16 @@ async def taiji_bulk_import(
         await db.flush()
 
         _log(db, project, "created", from_status="", to_status="active",
-             notes=f"taiji-bulk-import: {username}/{token_name}")
+             notes=f"taiji-from-blob {snapshot_date}: {username}/{token_name}")
         existing.add(external_id)
         created += 1
 
     await db.commit()
-    return TaijiBulkImportResponse(
+    return TaijiFromBlobResponse(
         created=created,
         skipped=skipped,
         total_parsed=len(pairs),
+        snapshot_date=snapshot_date,
     )
 
 

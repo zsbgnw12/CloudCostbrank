@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     AUTH_ENFORCED: bool = True
     AUTH_ANONYMOUS_PREFIXES: str = "/api/health,/api/auth,/docs,/redoc,/openapi.json"
 
+    # ===== Taiji =====
+    # 全局共用 Blob SAS URL（容器级 sr=c、只读 sp=r）。后端按日 GET
+    # {date}_UTC+0.json 自动落库。新建 Taiji 货源时 backend 用此 URL 抽
+    # (username, token) 对并批量建账号，前端无需粘贴 JSON。
+    TAIJI_BLOB_SAS_URL: str = ""
+
     model_config = {"env_file": str(_ENV_FILE), "extra": "ignore"}
 
 
