@@ -1,34 +1,26 @@
-"""Taiji (New-API fork) billing + token-usage collector.
+"""Taiji billing collector — 双路径分发。
 
-Taiji 是基于 New-API 二次开发的内部 AI 聚合平台。日志接口沿用 New-API 的
- `/api/log/` 规范：分页、按时间戳过滤、按 `type=2` 取消费日志。
+Taiji 是内部 AI 聚合平台(类 newapi 二次开发)。collector 按 secret_data 自动分发:
 
-Secret data schema (Fernet-encrypted in CloudAccount):
-    {
-        "api_base": "https://api.taijiaicloud.com",
-        "access_token": "<admin access token>",   # Authorization: Bearer <token>
-        "admin_user_id": "1"                       # 可选：New-API-User header，大多数部署需要
-    }
+1) Blob 模式(推荐，对应 /accounts 新建 UX 的"粘贴快照 + Blob SAS URL"):
+   secret_data = {"blob_sas_url": "https://<acc>.blob.core.windows.net/<container>?sp=r&...&sig=..."}
+   按天 GET {date}_UTC+0.json，解析 taiji 顶层 section，对齐
+   AWS account_id / GCP project.id 的角色:project_id = "<username>:<token_name>"。
 
-DataSource.config schema:
-    {
-        "quota_per_usd": 500000,        # quota 换算美元倍数，OneAPI/New-API 默认 500000
-        "filter_username": null,        # 可选：只拉某个用户
-        "filter_token_name": null,      # 可选：只拉某个 token
-        "page_size": 100,               # 可选：分页大小
-        "page_start": 1                 # 可选：首页的 p 值；多数 new-api 版本是 1-based，
-                                        # 新 fork 若为 0-based 可改成 0
-    }
+2) 旧 API 模式(向后兼容):
+   secret_data = {api_base, access_token, admin_user_id?}
+   分页拉 /api/log/ 原始记录,聚合成 billing row。
 
-返回 billing rows 兼容 sync_service.upsert_billing_rows 的格式，并在每行
-附带 `_token_usage` 字段（dict），供 sync_service 侧再做一次按
-(date, model) 的聚合 upsert 进 token_usage 表。
+DataSource.config (按模式不同):
+    Blob 模式: {timezone_tag, filename_template, request_timeout_sec}
+    API  模式: {quota_per_usd, filter_username, filter_token_name, page_size, page_start}
 """
 
 import datetime as dt
 import logging
 from collections import defaultdict
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -44,9 +36,14 @@ _DEFAULT_QUOTA_PER_USD = 500_000
 
 _DEFAULT_PAGE_SIZE = 100
 
+# Blob 模式默认配置
+_DEFAULT_TIMEZONE_TAG = "UTC+0"
+_DEFAULT_FILENAME_TEMPLATE = "{date}_{tz}.json"
+_DEFAULT_REQUEST_TIMEOUT_SEC = 60.0
+
 
 class TaijiCollector(BaseCollector):
-    """从 Taiji (New-API) 拉请求日志，按天 × token × model 聚合成 billing rows。"""
+    """Taiji billing 双路径采集器：按 secret_data 内容分发到 Blob 模式 / 旧 API 模式。"""
 
     def collect_billing(
         self,
@@ -55,27 +52,82 @@ class TaijiCollector(BaseCollector):
         start_date: str,  # YYYY-MM-DD
         end_date: str,    # YYYY-MM-DD
     ) -> list[dict]:
+        sd = secret_data or {}
+        # 优先 Blob 模式：只要有 blob_sas_url 就走这条；为空才回退 API 模式
+        if (sd.get("blob_sas_url") or "").strip():
+            return self._collect_via_blob(sd, config or {}, start_date, end_date)
+        if (sd.get("api_base") or "").strip() and (sd.get("access_token") or "").strip():
+            return self._collect_via_api(sd, config or {}, start_date, end_date)
+        raise ValueError(
+            "taiji secret_data 缺凭证：需要 blob_sas_url 或 api_base+access_token"
+        )
+
+    # ────────────────────────── Blob 模式 ──────────────────────────
+
+    def _collect_via_blob(
+        self, secret_data: dict, config: dict, start_date: str, end_date: str,
+    ) -> list[dict]:
+        """按天 GET {date}_UTC+0.json，解析 taiji section → billing rows。"""
+        sas_url = secret_data["blob_sas_url"]
+        tz_tag = config.get("timezone_tag") or _DEFAULT_TIMEZONE_TAG
+        filename_template = config.get("filename_template") or _DEFAULT_FILENAME_TEMPLATE
+        timeout_sec = float(config.get("request_timeout_sec") or _DEFAULT_REQUEST_TIMEOUT_SEC)
+
+        d_start = dt.date.fromisoformat(start_date)
+        d_end = dt.date.fromisoformat(end_date)
+        if d_end < d_start:
+            raise ValueError(f"end_date {end_date} 早于 start_date {start_date}")
+
+        logger.info(
+            "Taiji blob fetch: [%s ~ %s] tz=%s sas_host=%s",
+            start_date, end_date, tz_tag, urlsplit(sas_url).netloc,
+        )
+
+        rows: list[dict] = []
+        days_fetched = 0
+        days_missing = 0
+        with httpx.Client(timeout=httpx.Timeout(timeout_sec, read=timeout_sec)) as client:
+            cur = d_start
+            while cur <= d_end:
+                filename = filename_template.format(date=cur.isoformat(), tz=tz_tag)
+                url = _build_blob_url(sas_url, filename)
+                resp = client.get(url)
+                if resp.status_code == 404:
+                    logger.info("Taiji blob missing (404): %s", filename)
+                    days_missing += 1
+                    cur += dt.timedelta(days=1)
+                    continue
+                resp.raise_for_status()
+                day_rows = _parse_blob_day(resp.json(), default_date=cur.isoformat())
+                rows.extend(day_rows)
+                days_fetched += 1
+                cur += dt.timedelta(days=1)
+        logger.info(
+            "Taiji blob done: %d rows / %d day(s) fetched, %d missing",
+            len(rows), days_fetched, days_missing,
+        )
+        return rows
+
+    # ────────────────────────── 旧 API 模式 ──────────────────────────
+
+    def _collect_via_api(
+        self, secret_data: dict, config: dict, start_date: str, end_date: str,
+    ) -> list[dict]:
         api_base = (secret_data.get("api_base") or "").rstrip("/")
         access_token = secret_data.get("access_token")
         admin_user_id = secret_data.get("admin_user_id")
-        if not api_base or not access_token:
-            raise ValueError("taiji secret_data 缺少 api_base 或 access_token")
 
         quota_per_usd = int(config.get("quota_per_usd") or _DEFAULT_QUOTA_PER_USD)
         page_size = int(config.get("page_size") or _DEFAULT_PAGE_SIZE)
-        # new-api 多数版本的 /api/log/ 首页 p=1（handler 内 offset=(p-1)*size）。
-        # 若目标部署是新 fork 的 0-based 风格，改成 config.page_start=0。
         page_start = int(config.get("page_start") if config.get("page_start") is not None else 1)
         filter_username = config.get("filter_username")
         filter_token_name = config.get("filter_token_name")
 
         start_ts, end_ts = _date_range_to_unix(start_date, end_date)
-
         logger.info(
-            "Taiji fetch logs: base=%s [%s~%s] ts=[%d~%d) page_size=%d",
+            "Taiji API fetch: base=%s [%s~%s] ts=[%d~%d) page_size=%d",
             api_base, start_date, end_date, start_ts, end_ts, page_size,
         )
-
         raw_logs = self._fetch_all_logs(
             api_base=api_base,
             access_token=access_token,
@@ -87,8 +139,7 @@ class TaijiCollector(BaseCollector):
             filter_username=filter_username,
             filter_token_name=filter_token_name,
         )
-
-        logger.info("Taiji received %d raw log records", len(raw_logs))
+        logger.info("Taiji API received %d raw records", len(raw_logs))
         return _aggregate_logs(raw_logs, quota_per_usd=quota_per_usd)
 
     def collect_resources(self, secret_data: dict, config: dict) -> list[dict]:
@@ -175,6 +226,113 @@ class TaijiCollector(BaseCollector):
                     break
 
         return all_items
+
+
+# ────────────────────── Blob 路径辅助 ──────────────────────
+
+def _build_blob_url(container_sas_url: str, filename: str) -> str:
+    """把 SAS 容器 URL 与单个文件名拼成完整 blob URL。
+
+    输入容器 SAS:`https://acc.blob.core.windows.net/<container>?<query>`
+    输出文件 URL:`https://acc.blob.core.windows.net/<container>/<filename>?<query>`
+
+    `+` 在 path 中字面有效,无需特别处理;但若 filename 含 `?` / `#` 等则要 encode。
+    Taiji 的命名只有 `[0-9-]_UTC+0.json` 这种可控形式,直接拼即可。
+    """
+    parts = urlsplit(container_sas_url)
+    new_path = parts.path.rstrip("/") + "/" + filename.lstrip("/")
+    return urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+
+
+def _parse_blob_day(payload: dict, *, default_date: str) -> list[dict]:
+    """把单天 blob JSON 展平成 billing rows。
+
+    优先用 payload.date_range.start_at[:10] 作为 date,blob 文件名传入的
+    default_date 仅做 fallback(一致性校验由调用方决定)。
+    """
+    date_str = default_date
+    dr = payload.get("date_range") or {}
+    if isinstance(dr, dict):
+        start_at = dr.get("start_at") or ""
+        if isinstance(start_at, str) and len(start_at) >= 10:
+            date_str = start_at[:10]
+
+    taiji_root = payload.get("taiji")
+    if not isinstance(taiji_root, dict):
+        return []
+
+    rows: list[dict] = []
+    for username, tokens in taiji_root.items():
+        if not isinstance(tokens, dict):
+            continue
+        u = (username or "").strip() or "_"
+        for token_name, token_blob in tokens.items():
+            if not isinstance(token_blob, dict):
+                continue
+            tn = (token_name or "").strip() or "_"
+            project_id = f"{u}:{tn}"
+            key_display = token_blob.get("key_display") or ""
+            details = token_blob.get("details") or {}
+            if not isinstance(details, dict) or not details:
+                continue
+
+            for model_name, m in details.items():
+                if not isinstance(m, dict):
+                    continue
+                cost = _to_float(m.get("cost"))
+                prompt_tokens = _to_int(m.get("prompt_tokens"))
+                completion_tokens = _to_int(m.get("completion_tokens"))
+                count = _to_int(m.get("count"))
+                cache_hit = _to_int(m.get("cache_hit_tokens"))
+                total_tokens = prompt_tokens + completion_tokens
+
+                additional = {
+                    "key_display": key_display,
+                    "request_count": count,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                }
+                if cache_hit:
+                    additional["cache_hit_tokens"] = cache_hit
+
+                rows.append({
+                    "date": date_str,
+                    "project_id": project_id,
+                    "project_name": project_id,
+                    "product": model_name or "unknown",
+                    "usage_type": "",
+                    "region": None,
+                    "cost_type": "regular",
+                    "cost": round(cost, 6),
+                    "usage_quantity": float(total_tokens),
+                    "usage_unit": "tokens",
+                    "currency": "USD",
+                    "currency_conversion_rate": 1.0,
+                    "tags": {},
+                    "additional_info": additional,
+                })
+    return rows
+
+
+def _to_float(v) -> float:
+    if v is None:
+        return 0.0
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _to_int(v) -> int:
+    if v is None:
+        return 0
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return 0
 
 
 # ────────────────────── 辅助：聚合 ──────────────────────

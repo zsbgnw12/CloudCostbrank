@@ -1072,6 +1072,153 @@ async def bulk_assign_entity(
     )
 
 
+# ─── Taiji bulk import (snapshot JSON → N service accounts) ──────────────
+
+class TaijiBulkImportRequest(BaseModel):
+    supply_source_id: int
+    entity_id: int | None = None
+    # SAS URL（容器级 sr=c，只读 sp=r）—— 后台 collector 按日 GET {date}_UTC+0.json
+    blob_sas_url: str
+    # 日快照 JSON 整段内容（前端文本框粘贴）—— 仅用来抽取 (username, token_name) 列表
+    snapshot_json: dict[str, Any]
+
+    @field_validator("blob_sas_url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        u = (v or "").strip()
+        if not u.startswith(("http://", "https://")):
+            raise ValueError("blob_sas_url 必须是 http(s) URL")
+        return u
+
+
+class TaijiBulkImportSkip(BaseModel):
+    external_project_id: str
+    reason: str
+
+
+class TaijiBulkImportResponse(BaseModel):
+    created: int
+    skipped: list[TaijiBulkImportSkip]
+    total_parsed: int
+    section_used: str = "taiji"
+
+
+@router.post(
+    "/taiji-bulk-import",
+    response_model=TaijiBulkImportResponse,
+)
+async def taiji_bulk_import(
+    body: TaijiBulkImportRequest,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """从一份日快照 JSON 里批量发现 (username, token_name) 对，为每对建一个
+    服务账号；secret_data 仅含 blob_sas_url，后续按日由 collector 拉。
+
+    规则：
+      - 只读 JSON 的 "taiji" 顶层 section（其他 section 暂不导入，与"Taiji 货源"语义对齐）
+      - external_project_id = "<username>:<token_name>"
+      - 同 supply_source 下已存在的 external_project_id 跳过（幂等再次粘贴）
+      - entity_id 可选；若给了须属于该 supply_source
+      - 创建过程任一失败整批回滚
+    """
+    ss = await db.get(SupplySource, body.supply_source_id)
+    if not ss:
+        raise HTTPException(404, "货源不存在")
+    if ss.provider != "taiji":
+        raise HTTPException(400, f"目标货源 provider={ss.provider}，仅 taiji 支持快照批量导入")
+    ensure_provider_visible(principal, ss.provider)
+
+    # entity_id 校验
+    target_entity_id: int | None = None
+    if body.entity_id is not None:
+        ent = await db.get(Entity, body.entity_id)
+        if not ent or ent.supply_source_id != body.supply_source_id:
+            raise HTTPException(400, "entity_id 不属于该货源")
+        target_entity_id = ent.id
+
+    # 抽取 (username, token_name) 列表
+    taiji_section = body.snapshot_json.get("taiji")
+    if not isinstance(taiji_section, dict):
+        raise HTTPException(400, "JSON 中缺少 taiji section（顶层 'taiji' key 不存在或不是对象）")
+
+    pairs: list[tuple[str, str]] = []
+    for username, tokens in taiji_section.items():
+        if not isinstance(tokens, dict):
+            continue
+        u = (username or "").strip()
+        if not u:
+            continue
+        for token_name in tokens.keys():
+            tn = (token_name or "").strip()
+            if not tn:
+                continue
+            pairs.append((u, tn))
+
+    if not pairs:
+        return TaijiBulkImportResponse(created=0, skipped=[], total_parsed=0)
+
+    # 已有 external_project_id 的集合（同货源内）—— 用于幂等跳过
+    existing_rows = (
+        await db.execute(
+            select(Project.external_project_id).where(
+                Project.supply_source_id == body.supply_source_id,
+            )
+        )
+    ).scalars().all()
+    existing = set(existing_rows)
+
+    created = 0
+    skipped: list[TaijiBulkImportSkip] = []
+
+    for username, token_name in pairs:
+        external_id = f"{username}:{token_name}"
+        if external_id in existing:
+            skipped.append(TaijiBulkImportSkip(
+                external_project_id=external_id, reason="该货源下已存在同 ID 的账号",
+            ))
+            continue
+
+        # 与单建 create_account 流程一致：CloudAccount → DataSource → Project，共享同一 SAS
+        encrypted = encrypt_dict({"blob_sas_url": body.blob_sas_url})
+        ca = CloudAccount(name=f"taiji-{token_name}"[:100], provider="taiji", secret_data=encrypted)
+        db.add(ca)
+        await db.flush()
+
+        ds_cfg = {"auto_created": True, "timezone_tag": "UTC+0"}
+        ds = DataSource(
+            name=f"ds-taiji-{token_name}"[:100],
+            cloud_account_id=ca.id,
+            config=ds_cfg,
+            is_active=True,
+        )
+        db.add(ds)
+        await db.flush()
+
+        project = Project(
+            name=token_name,
+            external_project_id=external_id,
+            supply_source_id=body.supply_source_id,
+            entity_id=target_entity_id,
+            data_source_id=ds.id,
+            status="active",
+        )
+        db.add(project)
+        await db.flush()
+
+        _log(db, project, "created", from_status="", to_status="active",
+             notes=f"taiji-bulk-import: {username}/{token_name}")
+        existing.add(external_id)
+        created += 1
+
+    await db.commit()
+    return TaijiBulkImportResponse(
+        created=created,
+        skipped=skipped,
+        total_parsed=len(pairs),
+    )
+
+
 @router.post(
     "/{account_id}/suspend",
     response_model=ServiceAccountDetail,
