@@ -38,7 +38,9 @@ _DEFAULT_PAGE_SIZE = 100
 
 # Blob 模式默认配置
 _DEFAULT_TIMEZONE_TAG = "UTC+0"
-_DEFAULT_FILENAME_TEMPLATE = "{date}_{tz}.json"
+# 生产 blob 路径：cloudcost-taiji/taiji_log_data/{date}_UTC+0.json
+# config.subdir 可覆盖；默认 "taiji_log_data/"
+_DEFAULT_FILENAME_TEMPLATE = "taiji_log_data/{date}_{tz}.json"
 _DEFAULT_REQUEST_TIMEOUT_SEC = 60.0
 
 

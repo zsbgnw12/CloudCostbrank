@@ -1107,9 +1107,10 @@ def _taiji_fetch_latest_snapshot(sas_url: str, *, lookback_days: int = 7) -> tup
     def _encode_filename(name: str) -> str:
         return name.replace("+", "%2B")
 
-    # 后端尝试的子目录前缀：根 / "taiji/" / "daily/"。SAS 是容器级 read-only，
-    # 没 list 权限，只能"猜"几个常见命名。第一个 200 OK 的就用。
-    subdir_candidates = ["", "taiji/", "daily/"]
+    # 后端尝试的子目录前缀。生产实测文件在 `taiji_log_data/` 子目录下；
+    # 保留根目录与几个常见命名作为兜底。SAS 是容器级 read-only、没 list 权限，
+    # 只能"猜"路径——第一个 200 OK 的就用。
+    subdir_candidates = ["taiji_log_data/", "", "taiji/", "daily/"]
 
     today = dt.date.today()
     last_err: str | None = None
