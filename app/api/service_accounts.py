@@ -1224,9 +1224,10 @@ async def taiji_from_blob(
     ).scalars().all()
     existing = set(existing_rows)
 
-    created = 0
     skipped: list[TaijiFromBlobSkip] = []
-
+    # 待建账号的"骨架"列表 —— 先全部攒起来再一次性批量 flush，把 3N 次数据库
+    # round-trip 压成 4 次（CA、DS、Project、log）。否则上百对账号撞 30s 前端超时。
+    to_create: list[tuple[str, str, str]] = []  # (username, token, external_id)
     for username, token_name in pairs:
         external_id = f"{username}:{token_name}"
         if external_id in existing:
@@ -1234,13 +1235,29 @@ async def taiji_from_blob(
                 external_project_id=external_id, reason="该货源下已存在同 ID 的账号",
             ))
             continue
+        to_create.append((username, token_name, external_id))
+        existing.add(external_id)
 
-        encrypted = encrypt_dict({"blob_sas_url": sas_url})
-        ca = CloudAccount(name=f"taiji-{token_name}"[:100], provider="taiji", secret_data=encrypted)
+    encrypted = encrypt_dict({"blob_sas_url": sas_url})
+
+    # Phase 1：批量建 CloudAccount，一次 flush 拿到所有 ca.id
+    cas: list[CloudAccount] = []
+    for username, token_name, _ext in to_create:
+        ca = CloudAccount(
+            name=f"taiji-{token_name}"[:100],
+            provider="taiji",
+            secret_data=encrypted,
+        )
         db.add(ca)
+        cas.append(ca)
+    if cas:
         await db.flush()
 
-        ds_cfg = {"auto_created": True, "timezone_tag": "UTC+0"}
+    # Phase 2：批量建 DataSource（依赖 ca.id），一次 flush 拿到所有 ds.id
+    dses: list[DataSource] = []
+    ds_cfg = {"auto_created": True, "timezone_tag": "UTC+0",
+              "filename_template": "taiji_log_data/{date}_{tz}.json"}
+    for ca, (_u, token_name, _ext) in zip(cas, to_create):
         ds = DataSource(
             name=f"ds-taiji-{token_name}"[:100],
             cloud_account_id=ca.id,
@@ -1248,8 +1265,13 @@ async def taiji_from_blob(
             is_active=True,
         )
         db.add(ds)
+        dses.append(ds)
+    if dses:
         await db.flush()
 
+    # Phase 3：批量建 Project（依赖 ds.id），一次 flush 拿到 project.id 写日志
+    projects: list[Project] = []
+    for ds, (_u, token_name, external_id) in zip(dses, to_create):
         project = Project(
             name=token_name,
             external_project_id=external_id,
@@ -1259,16 +1281,18 @@ async def taiji_from_blob(
             status="active",
         )
         db.add(project)
+        projects.append(project)
+    if projects:
         await db.flush()
 
+    # Phase 4：写 ProjectAssignmentLog（仅 add，不需要再 flush）
+    for project, (username, token_name, _ext) in zip(projects, to_create):
         _log(db, project, "created", from_status="", to_status="active",
              notes=f"taiji-from-blob {snapshot_date}: {username}/{token_name}")
-        existing.add(external_id)
-        created += 1
 
     await db.commit()
     return TaijiFromBlobResponse(
-        created=created,
+        created=len(to_create),
         skipped=skipped,
         total_parsed=len(pairs),
         snapshot_date=snapshot_date,
