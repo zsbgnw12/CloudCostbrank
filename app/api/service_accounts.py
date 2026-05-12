@@ -1494,8 +1494,25 @@ async def taiji_cleanup_duplicates(
     ).scalars().all()
     orphan_ca_ids = sorted(set(int(x) for x in orphan_ca_rows if x is not None))
 
-    # 删孤儿 DS
+    # 清理其他指向孤儿 DS 的外键（sync_logs / token_usage / resource_inventory）。
+    # billing_raw_taiji 和 taiji_log_raw 是 CASCADE 自动删；billing_data 已 reassign。
+    # 这些表的历史记录直接删 —— 数据来源已合并到 kept DS，旧 DS 没人再用了。
     if orphan_ds_ids:
+        await db.execute(
+            text("DELETE FROM sync_logs WHERE data_source_id = ANY(:other)"),
+            {"other": orphan_ds_ids},
+        )
+        await db.execute(
+            text("DELETE FROM token_usage WHERE data_source_id = ANY(:other)"),
+            {"other": orphan_ds_ids},
+        )
+        # resource_inventory 的 FK 是 nullable，安全 SET NULL；Taiji 一般没资源数据
+        await db.execute(
+            text("UPDATE resource_inventory SET data_source_id = NULL WHERE data_source_id = ANY(:other)"),
+            {"other": orphan_ds_ids},
+        )
+
+        # 删孤儿 DS
         await db.execute(
             text("DELETE FROM data_sources WHERE id = ANY(:other)"),
             {"other": orphan_ds_ids},
