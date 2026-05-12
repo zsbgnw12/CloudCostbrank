@@ -236,11 +236,14 @@ def _build_blob_url(container_sas_url: str, filename: str) -> str:
     输入容器 SAS:`https://acc.blob.core.windows.net/<container>?<query>`
     输出文件 URL:`https://acc.blob.core.windows.net/<container>/<filename>?<query>`
 
-    `+` 在 path 中字面有效,无需特别处理;但若 filename 含 `?` / `#` 等则要 encode。
-    Taiji 的命名只有 `[0-9-]_UTC+0.json` 这种可控形式,直接拼即可。
+    Azure Blob 路径里的 `+` 必须 URL-encode 成 `%2B`（不 encode 服务端会当作
+    空格解释，访问 `UTC+0.json` 时会变成找 `UTC 0.json` → 404）。Taiji 文件名
+    形如 `2026-05-07_UTC+0.json`，必须保护。
     """
+    # 保留 lstrip("/") 兼容上层显式带前导斜杠的传参；`+` 显式 encode
+    safe_filename = filename.lstrip("/").replace("+", "%2B")
     parts = urlsplit(container_sas_url)
-    new_path = parts.path.rstrip("/") + "/" + filename.lstrip("/")
+    new_path = parts.path.rstrip("/") + "/" + safe_filename
     return urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
 
 

@@ -1095,35 +1095,58 @@ class TaijiFromBlobResponse(BaseModel):
 def _taiji_fetch_latest_snapshot(sas_url: str, *, lookback_days: int = 7) -> tuple[str, dict]:
     """从 SAS 容器尝试拉最近 lookback_days 天里第一个可用的 {date}_UTC+0.json。
 
-    返回 (snapshot_date, payload)；全部 404 抛 HTTPException 400。
+    返回 (snapshot_date, payload)；全部 404 抛 HTTPException 400 + 完整 URL 模板。
+
+    路径策略：在 container 根 + 几个常见子目录都试一遍。Azure Blob 路径里的
+    `+` 字符要 URL-encode 成 `%2B`（不 encode 会被服务端当作空格解释，导致 404）。
     """
     import httpx as _httpx
     from urllib.parse import urlsplit as _urlsplit, urlunsplit as _urlunsplit
 
+    # `+` 必须 encode；`:` 不会出现在文件名里，但保守起见也保护一下。
+    def _encode_filename(name: str) -> str:
+        return name.replace("+", "%2B")
+
+    # 后端尝试的子目录前缀：根 / "taiji/" / "daily/"。SAS 是容器级 read-only，
+    # 没 list 权限，只能"猜"几个常见命名。第一个 200 OK 的就用。
+    subdir_candidates = ["", "taiji/", "daily/"]
+
     today = dt.date.today()
     last_err: str | None = None
+    tried_urls: list[str] = []
+    parts = _urlsplit(sas_url)
     with _httpx.Client(timeout=_httpx.Timeout(30.0, read=60.0)) as client:
         for d in range(lookback_days + 1):
             day = today - dt.timedelta(days=d)
-            filename = f"{day.isoformat()}_UTC+0.json"
-            parts = _urlsplit(sas_url)
-            new_path = parts.path.rstrip("/") + "/" + filename
-            url = _urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
-            try:
-                resp = client.get(url)
-            except Exception as e:
-                last_err = f"GET {filename} 失败: {e}"
-                continue
-            if resp.status_code == 200:
+            raw_filename = f"{day.isoformat()}_UTC+0.json"
+            for sub in subdir_candidates:
+                filename = sub + _encode_filename(raw_filename)
+                new_path = parts.path.rstrip("/") + "/" + filename
+                url = _urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+                # 记录脱敏后的 URL（去掉 query 里的 sig）便于排查
+                tried_urls.append(_urlunsplit((parts.scheme, parts.netloc, new_path, "", "")))
                 try:
-                    return day.isoformat(), resp.json()
+                    resp = client.get(url)
                 except Exception as e:
-                    last_err = f"{filename} 解析 JSON 失败: {e}"
+                    last_err = f"GET {filename} 失败: {e}"
                     continue
-            if resp.status_code == 404:
-                continue
-            last_err = f"{filename} HTTP {resp.status_code}"
-    raise HTTPException(400, f"Blob 最近 {lookback_days + 1} 天均无可用快照。最后错误: {last_err or '全部 404'}")
+                if resp.status_code == 200:
+                    try:
+                        return day.isoformat(), resp.json()
+                    except Exception as e:
+                        last_err = f"{filename} 解析 JSON 失败: {e}"
+                        continue
+                if resp.status_code == 404:
+                    continue
+                last_err = f"{filename} HTTP {resp.status_code}"
+
+    # 失败时把试过的前 4 个 URL 一起返回，方便用户去 Storage Explorer 比对
+    sample = "; ".join(tried_urls[:4])
+    raise HTTPException(
+        400,
+        f"Blob 最近 {lookback_days + 1} 天均无可用快照。最后错误: {last_err or '全部 404'}。"
+        f" 试过的 URL 样本: {sample}",
+    )
 
 
 @router.post(
