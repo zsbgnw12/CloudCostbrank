@@ -1388,26 +1388,29 @@ async def taiji_cleanup_duplicates(
     kept_ds_id = ds_ids[0]
     orphan_ds_ids = [x for x in ds_ids if x != kept_ds_id]
 
-    # 2) 统计 billing 重复情况（不论 dry_run）
-    dup_cnt = (
+    # 2) 统计 billing 重复情况（不论 dry_run）。
+    # 用 DISTINCT ON 算保留集（O(N log N)），总数 - 保留数 = 重复数。
+    # 之前用 correlated subquery 是 O(N²)，6 万行就超 30 秒前端 fetch 超时。
+    total_cnt = (
+        await db.execute(
+            text("SELECT count(*) FROM billing_data WHERE data_source_id = ANY(:ds_ids)"),
+            {"ds_ids": ds_ids},
+        )
+    ).scalar() or 0
+    keep_cnt = (
         await db.execute(
             text("""
-                SELECT count(*) FROM billing_data
-                WHERE data_source_id = ANY(:ds_ids)
-                  AND id > (
-                    SELECT min(id) FROM billing_data b2
-                    WHERE b2.data_source_id = ANY(:ds_ids)
-                      AND b2.date = billing_data.date
-                      AND b2.project_id = billing_data.project_id
-                      AND b2.product IS NOT DISTINCT FROM billing_data.product
-                      AND b2.usage_type IS NOT DISTINCT FROM billing_data.usage_type
-                      AND b2.region IS NOT DISTINCT FROM billing_data.region
-                      AND b2.cost_type IS NOT DISTINCT FROM billing_data.cost_type
-                  )
+                SELECT count(*) FROM (
+                  SELECT DISTINCT ON (date, project_id, product, usage_type, region, cost_type) id
+                  FROM billing_data
+                  WHERE data_source_id = ANY(:ds_ids)
+                  ORDER BY date, project_id, product, usage_type, region, cost_type, id
+                ) keep
             """),
             {"ds_ids": ds_ids},
         )
     ).scalar() or 0
+    dup_cnt = int(total_cnt - keep_cnt)
 
     reassign_cnt = (
         await db.execute(
@@ -1439,21 +1442,19 @@ async def taiji_cleanup_duplicates(
         )
 
     # ─── 真正执行 ───
-    # 删除重复行（保留每业务 key 下 id 最小的）
+    # 删除重复行（保留每业务 key 下 id 最小的）。用 DISTINCT ON 算 keep 集，
+    # 然后 DELETE NOT IN keep —— O(N log N)，远快于 correlated subquery。
     await db.execute(
         text("""
+            WITH to_keep AS (
+              SELECT DISTINCT ON (date, project_id, product, usage_type, region, cost_type) id
+              FROM billing_data
+              WHERE data_source_id = ANY(:ds_ids)
+              ORDER BY date, project_id, product, usage_type, region, cost_type, id
+            )
             DELETE FROM billing_data
             WHERE data_source_id = ANY(:ds_ids)
-              AND id > (
-                SELECT min(id) FROM billing_data b2
-                WHERE b2.data_source_id = ANY(:ds_ids)
-                  AND b2.date = billing_data.date
-                  AND b2.project_id = billing_data.project_id
-                  AND b2.product IS NOT DISTINCT FROM billing_data.product
-                  AND b2.usage_type IS NOT DISTINCT FROM billing_data.usage_type
-                  AND b2.region IS NOT DISTINCT FROM billing_data.region
-                  AND b2.cost_type IS NOT DISTINCT FROM billing_data.cost_type
-              )
+              AND id NOT IN (SELECT id FROM to_keep)
         """),
         {"ds_ids": ds_ids},
     )
