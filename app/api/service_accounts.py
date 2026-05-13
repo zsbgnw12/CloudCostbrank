@@ -1528,7 +1528,12 @@ async def taiji_ingest_day(
 
     billing_inserted = 0
     if rows:
-        # 批量 INSERT，唯一约束撞了就跳过（再次上传同一份不会重复算）
+        # 批量 INSERT，唯一约束撞了就跳过（再次上传同一份不会重复算）。
+        # 用列名 ON CONFLICT 而非 ON CONSTRAINT —— billing_summary 是 PG 分区表，
+        # 按列名匹配更通用、不依赖具体 constraint 名。
+        # COALESCE 兜底是因为 region 可能 NULL、usage_type 可能空串 —— PG 索引相等比较
+        # NULL 是"未知"不等于 NULL，会导致 ON CONFLICT 漏判同一行触发重复插入。
+        # 把可能 NULL 的列用空串替代再比较，保证去重逻辑稳定。
         stmt = _text("""
             INSERT INTO billing_summary
               (date, provider, data_source_id, project_id, project_name,
@@ -1540,10 +1545,9 @@ async def taiji_ingest_day(
                :product, :usage_type, :region, :cost, :cost_type,
                :usage_quantity, :usage_unit, :currency, :currency_conversion_rate,
                CAST(:additional_info AS JSONB))
-            ON CONFLICT ON CONSTRAINT uix_billing_dedup DO NOTHING
+            ON CONFLICT (date, data_source_id, project_id, product, usage_type, region, cost_type)
+            DO NOTHING
         """)
-        # 单次提交，绑定大批 params。asyncpg 对 executemany 不友好，逐 row execute 也可，
-        # 但实测 300 rows 单次 commit 1 秒内即可
         for r in rows:
             await db.execute(stmt, r)
             billing_inserted += 1  # 计数算"已尝试"行；真实 inserted 由 ON CONFLICT 决定
