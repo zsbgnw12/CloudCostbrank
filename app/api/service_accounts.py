@@ -1356,11 +1356,11 @@ async def taiji_ingest_day(
     dr = snapshot.get("date_range") if isinstance(snapshot, dict) else None
     if not isinstance(dr, dict) or not isinstance(dr.get("start_at"), str):
         raise HTTPException(400, "snapshot_json 缺少有效的 date_range.start_at")
-    snapshot_date = dr["start_at"][:10]
+    snapshot_date_str = dr["start_at"][:10]
     try:
-        dt.date.fromisoformat(snapshot_date)
+        snapshot_date_obj = dt.date.fromisoformat(snapshot_date_str)
     except ValueError:
-        raise HTTPException(400, f"date_range.start_at 不是合法 YYYY-MM-DD: {snapshot_date}")
+        raise HTTPException(400, f"date_range.start_at 不是合法 YYYY-MM-DD: {snapshot_date_str}")
 
     taiji_section = snapshot.get("taiji")
     if not isinstance(taiji_section, dict):
@@ -1509,7 +1509,8 @@ async def taiji_ingest_day(
                 if cache_hit:
                     add_info["cache_hit_tokens"] = cache_hit
                 rows.append({
-                    "date": snapshot_date,
+                    # asyncpg 二进制协议要求 datetime.date 对象，不是字符串
+                    "date": snapshot_date_obj,
                     "provider": "taiji",
                     "data_source_id": shared_ds.id,
                     "project_id": project_id,
@@ -1576,7 +1577,7 @@ async def taiji_ingest_day(
         raise HTTPException(500, f"commit 失败: {type(e).__name__}: {e}")
 
     return TaijiIngestDayResponse(
-        snapshot_date=snapshot_date,
+        snapshot_date=snapshot_date_str,
         projects_created=projects_created,
         projects_existing=projects_existing,
         billing_rows_inserted=billing_inserted,
