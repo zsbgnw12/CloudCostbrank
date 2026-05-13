@@ -32,6 +32,7 @@ from app.models.project_assignment_log import ProjectAssignmentLog
 from app.models.project_customer_assignment import ProjectCustomerAssignment
 from app.models.supplier import Supplier
 from app.models.supply_source import SupplySource
+from app.config import settings
 from app.services.crypto_service import encrypt_dict, decrypt_to_dict
 from app.services.default_supply_sources import ensure_other_gcp_supply_source_id
 
@@ -2395,3 +2396,198 @@ async def discover_gcp_projects(
         await db.commit()
 
     return {"created": len(created), "projects": created}
+
+
+# ─── Azure：同步订阅 displayName ────────────────────────────────
+
+class AzureSyncSubscriptionNamesRequest(BaseModel):
+    supply_source_id: int
+
+
+class AzureSubNameUpdate(BaseModel):
+    project_id: int
+    subscription_id: str
+    old_name: str
+    new_name: str
+
+
+class AzureSyncSubscriptionNamesResponse(BaseModel):
+    total_projects: int
+    updated: list[AzureSubNameUpdate]
+    unchanged: int
+    missing: list[str]  # subscription_id 在 ARM 列表里没找到的 project
+    api_errors: list[str]
+
+
+@router.post(
+    "/azure-sync-subscription-names",
+    response_model=AzureSyncSubscriptionNamesResponse,
+)
+async def azure_sync_subscription_names(
+    body: AzureSyncSubscriptionNamesRequest,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """从 Azure ARM 拉每个 SP 可见订阅的 displayName，更新本地 Project.name。
+
+    流程：
+      1. 加载该 supply_source 下所有 Azure Project + 对应 CloudAccount
+      2. 按 (tenant_id, client_id) 分组——同一 SP 一次 token + 一次 list
+      3. 用 client_credentials 拿 ARM token → GET /subscriptions
+      4. 用 subscription_id (= Project.external_project_id) 匹配 displayName
+      5. 与本地 Project.name 比对，不一致就 UPDATE
+
+    幂等：重复点不会重复改。
+    """
+    import requests as _requests
+
+    ss = await db.get(SupplySource, body.supply_source_id)
+    if not ss:
+        raise HTTPException(404, "货源不存在")
+    if ss.provider != "azure":
+        raise HTTPException(400, f"该端点仅支持 azure 货源，当前 provider={ss.provider}")
+    ensure_provider_visible(principal, "azure")
+
+    # 加载本货源下所有未删除的 Azure 服务账号（含其 CA）
+    rows = (await db.execute(
+        select(Project, DataSource, CloudAccount)
+        .join(DataSource, Project.data_source_id == DataSource.id)
+        .join(CloudAccount, DataSource.cloud_account_id == CloudAccount.id)
+        .where(
+            Project.supply_source_id == body.supply_source_id,
+            Project.recycled_at.is_(None),
+        )
+    )).all()
+
+    if not rows:
+        return AzureSyncSubscriptionNamesResponse(
+            total_projects=0, updated=[], unchanged=0, missing=[], api_errors=[],
+        )
+
+    # 按 (tenant_id, client_id) 分组 → 减少 ARM 调用次数
+    # group_key → (token_creds, list of (project, sub_id))
+    groups: dict[tuple[str, str], dict] = {}
+    api_errors: list[str] = []
+
+    for project, _ds, ca in rows:
+        try:
+            sd = decrypt_to_dict(ca.secret_data) if ca.secret_data else {}
+        except Exception as e:
+            api_errors.append(f"project#{project.id} 凭证解密失败: {e}")
+            continue
+        # 解析 (tenant_id, client_id, client_secret)，与 azure_collector 同口径
+        mode = sd.get("auth_mode", "legacy")
+        tenant_id = sd.get("tenant_id")
+        if not tenant_id:
+            api_errors.append(f"project#{project.id} secret_data 缺 tenant_id")
+            continue
+        if mode == "multi_tenant":
+            client_id = settings.AZURE_APP_CLIENT_ID
+            client_secret = settings.AZURE_APP_CLIENT_SECRET
+            if not client_id or not client_secret:
+                api_errors.append(f"project#{project.id} multi_tenant 但 backend 未配 AZURE_APP_*")
+                continue
+        else:
+            client_id = sd.get("client_id")
+            client_secret = sd.get("client_secret")
+            if not client_id or not client_secret:
+                api_errors.append(f"project#{project.id} secret_data 缺 client_id/secret")
+                continue
+
+        gkey = (tenant_id, client_id)
+        if gkey not in groups:
+            groups[gkey] = {
+                "tenant_id": tenant_id,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "projects": [],
+            }
+        groups[gkey]["projects"].append((project, (project.external_project_id or "").strip()))
+
+    # 每组拉 ARM
+    updated: list[AzureSubNameUpdate] = []
+    missing: list[str] = []
+    unchanged = 0
+
+    for gkey, grp in groups.items():
+        tenant_id, client_id = gkey
+        client_secret = grp["client_secret"]
+        # 1) 拿 ARM token
+        try:
+            tok_resp = _requests.post(
+                f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "scope": "https://management.azure.com/.default",
+                },
+                timeout=30,
+            )
+        except Exception as e:
+            api_errors.append(f"tenant {tenant_id}: token 请求异常 {e}")
+            continue
+        if tok_resp.status_code != 200:
+            api_errors.append(
+                f"tenant {tenant_id}: 拿 token 失败 {tok_resp.status_code} {tok_resp.text[:200]}"
+            )
+            continue
+        arm_token = tok_resp.json().get("access_token")
+        if not arm_token:
+            api_errors.append(f"tenant {tenant_id}: 返回无 access_token")
+            continue
+
+        # 2) list subscriptions
+        try:
+            sub_resp = _requests.get(
+                "https://management.azure.com/subscriptions?api-version=2020-01-01",
+                headers={"Authorization": f"Bearer {arm_token}"},
+                timeout=30,
+            )
+        except Exception as e:
+            api_errors.append(f"tenant {tenant_id}: subscriptions API 异常 {e}")
+            continue
+        if sub_resp.status_code != 200:
+            api_errors.append(
+                f"tenant {tenant_id}: list subscriptions 失败 {sub_resp.status_code} {sub_resp.text[:200]}"
+            )
+            continue
+        # subscriptionId → displayName
+        sub_map: dict[str, str] = {}
+        for sub in sub_resp.json().get("value", []):
+            sid = sub.get("subscriptionId")
+            name = sub.get("displayName")
+            if sid and name:
+                sub_map[sid.lower()] = name
+
+        # 3) 匹配本组 projects 并更新
+        for project, sid in grp["projects"]:
+            if not sid:
+                missing.append(f"project#{project.id} (空 external_project_id)")
+                continue
+            new_name = sub_map.get(sid.lower())
+            if new_name is None:
+                missing.append(sid)
+                continue
+            old_name = project.name or ""
+            if new_name != old_name:
+                project.name = new_name
+                updated.append(AzureSubNameUpdate(
+                    project_id=project.id,
+                    subscription_id=sid,
+                    old_name=old_name,
+                    new_name=new_name,
+                ))
+            else:
+                unchanged += 1
+
+    if updated:
+        await db.commit()
+
+    return AzureSyncSubscriptionNamesResponse(
+        total_projects=sum(1 for _ in rows),
+        updated=updated,
+        unchanged=unchanged,
+        missing=missing,
+        api_errors=api_errors,
+    )
