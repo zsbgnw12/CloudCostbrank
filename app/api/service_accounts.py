@@ -1528,12 +1528,16 @@ async def taiji_ingest_day(
 
     billing_inserted = 0
     if rows:
-        # 批量 INSERT，唯一约束撞了就跳过（再次上传同一份不会重复算）。
-        # 用列名 ON CONFLICT 而非 ON CONSTRAINT —— billing_summary 是 PG 分区表，
-        # 按列名匹配更通用、不依赖具体 constraint 名。
-        # COALESCE 兜底是因为 region 可能 NULL、usage_type 可能空串 —— PG 索引相等比较
-        # NULL 是"未知"不等于 NULL，会导致 ON CONFLICT 漏判同一行触发重复插入。
-        # 把可能 NULL 的列用空串替代再比较，保证去重逻辑稳定。
+        # 批量 INSERT。billing_summary 是 PG 分区表 + uix_billing_dedup 唯一约束。
+        # ON CONFLICT 必须用列名列表（分区表不支持 ON CONSTRAINT 全约束名）。
+        # 注意：region 可能 NULL —— PG 把两个 NULL 视为不相等，所以同一 (date, ds, pid,
+        # product, ut, NULL, ct) 重复插入不会被 ON CONFLICT 拦下。Taiji 数据 region
+        # 永远 NULL，需要先用 COALESCE 标准化或 region 改成空串。这里改写：把 None
+        # 改为空串 '' 入库，唯一约束就能正确去重。
+        for r in rows:
+            if r.get("region") is None:
+                r["region"] = ""
+
         stmt = _text("""
             INSERT INTO billing_summary
               (date, provider, data_source_id, project_id, project_name,
@@ -1548,11 +1552,28 @@ async def taiji_ingest_day(
             ON CONFLICT (date, data_source_id, project_id, product, usage_type, region, cost_type)
             DO NOTHING
         """)
-        for r in rows:
-            await db.execute(stmt, r)
-            billing_inserted += 1  # 计数算"已尝试"行；真实 inserted 由 ON CONFLICT 决定
+        try:
+            for r in rows:
+                await db.execute(stmt, r)
+                billing_inserted += 1
+        except Exception as e:
+            # 显式包装：让真实错误透过 FastAPI 异常处理 + CORS 返到浏览器。
+            # 不然某些异常会直接 ASGI 抛 → 响应没 CORS header → 浏览器只显示 500
+            # 不显示 body，无法定位。
+            import logging as _logging
+            _logging.getLogger(__name__).exception("taiji-ingest-day INSERT failed")
+            await db.rollback()
+            raise HTTPException(
+                500,
+                f"billing INSERT 失败 row#{billing_inserted + 1}: {type(e).__name__}: {e}",
+            )
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).exception("taiji-ingest-day commit failed")
+        raise HTTPException(500, f"commit 失败: {type(e).__name__}: {e}")
 
     return TaijiIngestDayResponse(
         snapshot_date=snapshot_date,
