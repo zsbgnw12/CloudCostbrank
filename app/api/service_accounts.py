@@ -5,6 +5,7 @@
 
 import datetime as dt
 import io
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -1315,6 +1316,245 @@ async def taiji_from_blob(
         skipped=skipped,
         total_parsed=len(pairs),
         snapshot_date=snapshot_date,
+    )
+
+
+# ─── Taiji ingest day from JSON body (绕过 Blob，直接落库) ───────────────
+
+class TaijiIngestDayRequest(BaseModel):
+    supply_source_id: int
+    # 单天快照 JSON，结构同 {date}_UTC+0.json：顶层含 date_range 和 taiji
+    snapshot_json: dict[str, Any]
+
+
+class TaijiIngestDayResponse(BaseModel):
+    snapshot_date: str
+    projects_created: int
+    projects_existing: int
+    billing_rows_inserted: int
+
+
+@router.post(
+    "/taiji-ingest-day",
+    response_model=TaijiIngestDayResponse,
+)
+async def taiji_ingest_day(
+    body: TaijiIngestDayRequest,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """前端直接把单天快照 JSON 上传过来，后端：
+    1) 共享 CA/DS 模式（命中 taiji-shared-{ssid}，没有就建）
+    2) 缺账号自动建（指向 shared DS）
+    3) 把当天所有 (project_id, model) 行 INSERT 进 billing_summary（ON CONFLICT DO NOTHING 幂等）
+    4) 不刷预聚合（让前端在所有日上传完后调一次 refresh-summary）
+    """
+    from sqlalchemy import text as _text
+
+    snapshot = body.snapshot_json
+    # 校验
+    dr = snapshot.get("date_range") if isinstance(snapshot, dict) else None
+    if not isinstance(dr, dict) or not isinstance(dr.get("start_at"), str):
+        raise HTTPException(400, "snapshot_json 缺少有效的 date_range.start_at")
+    snapshot_date = dr["start_at"][:10]
+    try:
+        dt.date.fromisoformat(snapshot_date)
+    except ValueError:
+        raise HTTPException(400, f"date_range.start_at 不是合法 YYYY-MM-DD: {snapshot_date}")
+
+    taiji_section = snapshot.get("taiji")
+    if not isinstance(taiji_section, dict):
+        raise HTTPException(400, "snapshot_json 缺少 taiji 顶层 section")
+
+    ss = await db.get(SupplySource, body.supply_source_id)
+    if not ss:
+        raise HTTPException(404, "货源不存在")
+    if ss.provider != "taiji":
+        raise HTTPException(400, f"目标货源 provider={ss.provider}，仅 taiji 支持")
+    ensure_provider_visible(principal, ss.provider)
+
+    # 共享 CA/DS：找/建（与 /taiji-from-blob 同一约定）
+    shared_ca_name = f"taiji-shared-{body.supply_source_id}"
+    shared_ca = (
+        await db.execute(
+            select(CloudAccount).where(
+                CloudAccount.name == shared_ca_name,
+                CloudAccount.provider == "taiji",
+            ).limit(1)
+        )
+    ).scalars().first()
+    ds_cfg = {
+        "auto_created": True,
+        "timezone_tag": "UTC+0",
+        "filename_template": "taiji_log_data/{date}_{tz}.json",
+        "shared": True,
+        "ingest_mode": "http_post",
+    }
+    if shared_ca:
+        shared_ds = (
+            await db.execute(
+                select(DataSource).where(DataSource.cloud_account_id == shared_ca.id).limit(1)
+            )
+        ).scalars().first()
+        if shared_ds is None:
+            shared_ds = DataSource(
+                name=f"ds-{shared_ca_name}"[:100],
+                cloud_account_id=shared_ca.id,
+                config=ds_cfg,
+                is_active=True,
+            )
+            db.add(shared_ds)
+            await db.flush()
+    else:
+        # 没 SAS 时 secret_data 给个空 dict；以后真要走 blob 同步再补 SAS
+        shared_ca = CloudAccount(name=shared_ca_name, provider="taiji", secret_data=encrypt_dict({}))
+        db.add(shared_ca)
+        await db.flush()
+        shared_ds = DataSource(
+            name=f"ds-{shared_ca_name}"[:100],
+            cloud_account_id=shared_ca.id,
+            config=ds_cfg,
+            is_active=True,
+        )
+        db.add(shared_ds)
+        await db.flush()
+
+    # 收集 (user, token) → 建缺账号
+    pairs: list[tuple[str, str]] = []
+    for username, tokens in taiji_section.items():
+        if not isinstance(tokens, dict):
+            continue
+        u = (username or "").strip()
+        if not u:
+            continue
+        for token_name in tokens.keys():
+            tn = (token_name or "").strip()
+            if tn:
+                pairs.append((u, tn))
+
+    existing_rows = (
+        await db.execute(
+            select(Project.external_project_id).where(
+                Project.supply_source_id == body.supply_source_id,
+            )
+        )
+    ).scalars().all()
+    existing = set(existing_rows)
+
+    to_create_pairs = [(u, t, f"{u}:{t}") for u, t in pairs if f"{u}:{t}" not in existing]
+    projects_created = 0
+    for _u, token_name, external_id in to_create_pairs:
+        project = Project(
+            name=token_name,
+            external_project_id=external_id,
+            supply_source_id=body.supply_source_id,
+            data_source_id=shared_ds.id,
+            status="active",
+        )
+        db.add(project)
+        existing.add(external_id)
+        projects_created += 1
+    if projects_created:
+        await db.flush()
+    projects_existing = len(pairs) - projects_created
+
+    # 构造 billing rows
+    def _f(v: Any) -> float:
+        try:
+            return float(v) if v not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _i(v: Any) -> int:
+        try:
+            return int(v) if v not in (None, "") else 0
+        except (TypeError, ValueError):
+            try:
+                return int(float(v))
+            except (TypeError, ValueError):
+                return 0
+
+    rows: list[dict] = []
+    for username, tokens in taiji_section.items():
+        if not isinstance(tokens, dict):
+            continue
+        u = (username or "").strip()
+        if not u:
+            continue
+        for token_name, token_blob in tokens.items():
+            if not isinstance(token_blob, dict):
+                continue
+            tn = (token_name or "").strip()
+            if not tn:
+                continue
+            project_id = f"{u}:{tn}"
+            key_display = token_blob.get("key_display") or ""
+            details = token_blob.get("details") or {}
+            if not isinstance(details, dict):
+                continue
+            for model_name, m in details.items():
+                if not isinstance(m, dict):
+                    continue
+                cost = round(_f(m.get("cost")), 6)
+                prompt = _i(m.get("prompt_tokens"))
+                completion = _i(m.get("completion_tokens"))
+                count = _i(m.get("count"))
+                cache_hit = _i(m.get("cache_hit_tokens"))
+                add_info = {
+                    "key_display": key_display,
+                    "request_count": count,
+                    "prompt_tokens": prompt,
+                    "completion_tokens": completion,
+                }
+                if cache_hit:
+                    add_info["cache_hit_tokens"] = cache_hit
+                rows.append({
+                    "date": snapshot_date,
+                    "provider": "taiji",
+                    "data_source_id": shared_ds.id,
+                    "project_id": project_id,
+                    "project_name": project_id,
+                    "product": model_name or "unknown",
+                    "usage_type": "",
+                    "region": None,
+                    "cost": cost,
+                    "cost_type": "regular",
+                    "usage_quantity": float(prompt + completion),
+                    "usage_unit": "tokens",
+                    "currency": "USD",
+                    "currency_conversion_rate": 1.0,
+                    "additional_info": json.dumps(add_info, ensure_ascii=False),
+                })
+
+    billing_inserted = 0
+    if rows:
+        # 批量 INSERT，唯一约束撞了就跳过（再次上传同一份不会重复算）
+        stmt = _text("""
+            INSERT INTO billing_summary
+              (date, provider, data_source_id, project_id, project_name,
+               product, usage_type, region, cost, cost_type,
+               usage_quantity, usage_unit, currency, currency_conversion_rate,
+               additional_info)
+            VALUES
+              (:date, :provider, :data_source_id, :project_id, :project_name,
+               :product, :usage_type, :region, :cost, :cost_type,
+               :usage_quantity, :usage_unit, :currency, :currency_conversion_rate,
+               CAST(:additional_info AS JSONB))
+            ON CONFLICT ON CONSTRAINT uix_billing_dedup DO NOTHING
+        """)
+        # 单次提交，绑定大批 params。asyncpg 对 executemany 不友好，逐 row execute 也可，
+        # 但实测 300 rows 单次 commit 1 秒内即可
+        for r in rows:
+            await db.execute(stmt, r)
+            billing_inserted += 1  # 计数算"已尝试"行；真实 inserted 由 ON CONFLICT 决定
+
+    await db.commit()
+
+    return TaijiIngestDayResponse(
+        snapshot_date=snapshot_date,
+        projects_created=projects_created,
+        projects_existing=projects_existing,
+        billing_rows_inserted=billing_inserted,
     )
 
 
