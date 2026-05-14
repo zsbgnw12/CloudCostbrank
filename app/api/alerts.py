@@ -122,12 +122,28 @@ async def create_rule(
     principal: Principal = Depends(require_cloud_role()),
 ):
     # 校验 target provider 在用户范围内
-    await _ensure_rule_target_in_scope(db, principal, body.target_type, body.target_id)
-    rule = AlertRule(**body.model_dump())
-    db.add(rule)
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    try:
+        await _ensure_rule_target_in_scope(db, principal, body.target_type, body.target_id)
+        rule = AlertRule(**body.model_dump())
+        db.add(rule)
+        await db.commit()
+        await db.refresh(rule)
+        return rule
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 未捕获异常会让响应没 CORS header → 浏览器只看到 "Failed to fetch"。
+        # 把它包装成 HTTPException(500) + log 完整 traceback，便于排查。
+        import logging as _logging
+        _logging.getLogger(__name__).exception(
+            "create_rule failed: body=%s principal.roles=%s",
+            body.model_dump(), getattr(principal, "roles", None),
+        )
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(500, f"创建告警规则失败: {type(e).__name__}: {e}")
 
 
 @router.put("/rules/{rule_id}", response_model=AlertRuleRead)
