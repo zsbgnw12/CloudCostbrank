@@ -483,6 +483,22 @@ async def rule_status(
     )
     yearly_map: dict[str, Decimal] = {r.project_id: r.total for r in yearly_result}
 
+    # 自定义时间段费用映射（为每个规则单独查询）
+    custom_period_map: dict[int, dict[str, Decimal]] = {}
+    for rule in rules:
+        if rule.threshold_type == "custom_period_budget_multi" and rule.start_date and rule.end_date:
+            period_end = rule.end_date + dt.timedelta(days=1)
+            custom_result = await db.execute(
+                select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
+                .where(
+                    BillingData.date >= rule.start_date,
+                    BillingData.date < period_end,
+                    BillingData.project_id.in_(project_ids),
+                )
+                .group_by(BillingData.project_id)
+            )
+            custom_period_map[rule.id] = {r.project_id: r.total for r in custom_result}
+
     daily_result = await db.execute(
         select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
         .where(
@@ -521,6 +537,17 @@ async def rule_status(
             actual = float(sum(yearly_map.get(p, Decimal("0")) for p in pids))
             triggered = actual >= threshold
             display_name = f"{len(pids)} 个项目"
+            display_provider = "multi"
+            display_pid = rule.target_id or ""
+        elif rule.threshold_type == "custom_period_budget_multi":
+            # 自定义时间段多项目合计
+            period_map = custom_period_map.get(rule.id, {})
+            actual = float(sum(period_map.get(p, Decimal("0")) for p in pids))
+            triggered = actual >= threshold
+            period_desc = ""
+            if rule.start_date and rule.end_date:
+                period_desc = f" ({rule.start_date.strftime('%Y-%m-%d')} ~ {rule.end_date.strftime('%Y-%m-%d')})"
+            display_name = f"{len(pids)} 个项目{period_desc}"
             display_provider = "multi"
             display_pid = rule.target_id or ""
         elif rule.threshold_type == "account_lifetime_quota":

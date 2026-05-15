@@ -94,6 +94,8 @@ class AlertRuleCreate(BaseModel):
     threshold_value: Decimal
     notify_webhook: str | None = None
     notify_email: str | None = None
+    start_date: dt.date | None = None
+    end_date: dt.date | None = None
 
 
 class AlertRuleUpdate(BaseModel):
@@ -105,6 +107,8 @@ class AlertRuleUpdate(BaseModel):
     notify_webhook: str | None = None
     notify_email: str | None = None
     is_active: bool | None = None
+    start_date: dt.date | None = None
+    end_date: dt.date | None = None
 
 
 class AlertRuleRead(BaseModel):
@@ -119,6 +123,8 @@ class AlertRuleRead(BaseModel):
     notify_webhook: str | None
     notify_email: str | None
     is_active: bool
+    start_date: dt.date | None
+    end_date: dt.date | None
     created_at: dt.datetime
 
 

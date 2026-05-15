@@ -56,6 +56,8 @@ def check_all_alerts():
                     _check_monthly_budget_multi(session, rule, today)
                 elif rule.threshold_type == "yearly_budget_multi":
                     _check_yearly_budget_multi(session, rule, today)
+                elif rule.threshold_type == "custom_period_budget_multi":
+                    _check_custom_period_budget_multi(session, rule, today)
                 else:
                     actual_value = _evaluate_rule(session, rule, yesterday, today)
                     if actual_value is not None and actual_value >= rule.threshold_value:
@@ -181,6 +183,60 @@ def _check_yearly_budget_multi(session: Session, rule: AlertRule, today: dt.date
     message = (
         f"告警 [{rule.name}]: 多项目年费用合计超预算!"
         f" {proj_desc} {today.year} 年累计 ${used_f:.2f},年预算 ${quota:.2f} (使用率 {pct:.1f}%)"
+    )
+    _trigger_alert(session, rule, Decimal(str(round(used_f, 2))), custom_message=message)
+
+
+def _check_custom_period_budget_multi(session: Session, rule: AlertRule, today: dt.date):
+    """自定义时间段多项目费用合计配额告警。
+
+    支持查询任意时间段（如 2025 年全年）的多项目费用合计。
+
+    rule 字段含义：
+      - target_type     : "project_group"
+      - target_id       : 多个 project.external_project_id 用逗号分隔
+      - threshold_value : 该组 project 在指定时间段的预算合计 USD
+      - start_date      : 开始日期（必填）
+      - end_date        : 结束日期（必填）
+
+    使用场景：查询历史年份（如 2025 年）或自定义时间段的多项目费用合计。
+    """
+    quota = float(rule.threshold_value or 0)
+    if quota <= 0:
+        return
+
+    # 检查时间段是否配置
+    if not rule.start_date or not rule.end_date:
+        logger.warning(f"Rule {rule.id} ({rule.name}): custom_period_budget_multi requires start_date and end_date")
+        return
+
+    raw_ids = (rule.target_id or "").strip()
+    if not raw_ids:
+        return
+    project_ids = [p.strip() for p in raw_ids.split(",") if p.strip()]
+    if not project_ids:
+        return
+
+    # 使用配置的时间段
+    period_start = rule.start_date
+    period_end = rule.end_date + dt.timedelta(days=1)  # 包含结束日期当天
+
+    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+        BillingData.project_id.in_(project_ids),
+        BillingData.date >= period_start,
+        BillingData.date < period_end,
+    ).scalar() or Decimal("0")
+    used_f = float(used)
+
+    if used_f < quota:
+        return
+
+    pct = (used_f / quota * 100) if quota else 0
+    proj_desc = f"{len(project_ids)} 个项目({', '.join(project_ids[:3])}{'...' if len(project_ids) > 3 else ''})"
+    period_desc = f"{period_start.strftime('%Y-%m-%d')} 至 {rule.end_date.strftime('%Y-%m-%d')}"
+    message = (
+        f"告警 [{rule.name}]: 自定义时间段多项目费用合计超预算!"
+        f" {proj_desc} 在 {period_desc} 期间累计 ${used_f:.2f},预算 ${quota:.2f} (使用率 {pct:.1f}%)"
     )
     _trigger_alert(session, rule, Decimal(str(round(used_f, 2))), custom_message=message)
 

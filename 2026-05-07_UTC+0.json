@@ -1,0 +1,5473 @@
+{
+  "date_range": {
+    "start_at": "2026-05-07 00:00:00",
+    "end_at": "2026-05-07 23:59:59",
+    "timezone": "UTC+0"
+  },
+  "taiji": {
+    "achock": {
+      "achock_claudecode": {
+        "key_display": "sk-XMJ6S7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ACZW": {
+      "ACZW_claudecode_default": {
+        "key_display": "sk-aqq9iP",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ACZW_geminivertex_default": {
+        "key_display": "sk-kcKifw",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ACZW0226": {
+      "ACZW0226_geminivertex2_default": {
+        "key_display": "sk-h7c96W",
+        "total_cost": 0.9037,
+        "total_count": 567,
+        "details": {
+          "gemini-3-pro-preview": {
+            "prompt_tokens": 2727,
+            "completion_tokens": 66703,
+            "cost": 0.80589,
+            "count": 347
+          },
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 995,
+            "completion_tokens": 1666,
+            "cost": 0.005488,
+            "count": 199
+          },
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 5,
+            "completion_tokens": 99,
+            "cost": 0.001198,
+            "count": 1
+          },
+          "gemini-3-flash-preview": {
+            "prompt_tokens": 402714,
+            "completion_tokens": 10858,
+            "cost": 0.091082,
+            "count": 20,
+            "cache_hit_tokens": 317448
+          }
+        }
+      },
+      "ACZW2026_claudecode_default": {
+        "key_display": "sk-0scCz2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Jerry-Personal-CC": {
+        "key_display": "sk-iwg2vc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Adam-kev": {
+      "Adam-kev_claude_default": {
+        "key_display": "sk-0YIIwZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude_aws_default": {
+        "key_display": "sk-LjyKZW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "adflash_test": {
+      "adflash_test_default": {
+        "key_display": "sk-SLBQly",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "agentflow": {
+      "agentflow_claudecode": {
+        "key_display": "sk-wOzRLy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "agentflow_gemini": {
+        "key_display": "sk-5q0Hqf",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "agentflow_gptazure": {
+        "key_display": "sk-YJMzGC",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude": {
+        "key_display": "sk-I1mhvu",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude code": {
+        "key_display": "sk-SgIeiE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude code latest": {
+        "key_display": "sk-UjxZBY",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude code test": {
+        "key_display": "sk-PuSUlw",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "cursor": {
+        "key_display": "sk-9r3YAE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "cursor_aws": {
+        "key_display": "sk-18EHkE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Test04": {
+        "key_display": "sk-izXnvX",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TestLynn": {
+        "key_display": "sk-SBzlmp",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "totus": {
+        "key_display": "sk-E2qt9p",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "测绘": {
+        "key_display": "sk-gk8P01",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "akl7777777": {
+      "Gemini特价": {
+        "key_display": "sk-mIASod",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "bananatest0130": {
+      "bananatest01": {
+        "key_display": "sk-KnfGRO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "bananatest02": {
+        "key_display": "sk-ZQ7jNa",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "bananatest03": {
+        "key_display": "sk-c87XYi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "bbxuser": {
+      "bbx_default_gemini": {
+        "key_display": "sk-tUiId9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "bduuser": {
+      "bdu_test_aws": {
+        "key_display": "sk-UhaGXK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "bozhi": {
+      "bozhi_default_aws": {
+        "key_display": "sk-ZusYRj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "bozhi_default_gpt": {
+        "key_display": "sk-4wmf5T",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "chengdumoran": {
+      "chengdumoran_claudecode_default": {
+        "key_display": "sk-bcTeTF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "chuanzhiwei": {
+      "川之维_aws": {
+        "key_display": "sk-fHJnCc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "川之维_claude": {
+        "key_display": "sk-qOcqjy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "川之维_gemini": {
+        "key_display": "sk-5tv3zT",
+        "total_cost": 0.0,
+        "total_count": 1,
+        "details": {
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 2,
+            "completion_tokens": 9,
+            "cost": 2.8e-05,
+            "count": 1
+          }
+        }
+      },
+      "川之维_gpt": {
+        "key_display": "sk-hccAgU",
+        "total_cost": 0.0081,
+        "total_count": 49,
+        "details": {
+          "gpt-5": {
+            "prompt_tokens": 336,
+            "completion_tokens": 752,
+            "cost": 0.007904,
+            "count": 48
+          },
+          "gpt-5.3-codex": {
+            "prompt_tokens": 7,
+            "completion_tokens": 13,
+            "cost": 0.000194,
+            "count": 1
+          }
+        }
+      },
+      "川之维_test_aws": {
+        "key_display": "sk-ricSgQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "川之维_test_gpt": {
+        "key_display": "sk-edHH2K",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "claude0114": {
+      "anthropic_default": {
+        "key_display": "sk-tMuP2C",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "aws_default": {
+        "key_display": "sk-5vd3Q8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "code_default": {
+        "key_display": "sk-P2GLJd",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "client121914": {
+      "v_claude_default": {
+        "key_display": "sk-juX2Nc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "v_gemini_default": {
+        "key_display": "sk-Bz1krV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "v_gpt_default": {
+        "key_display": "sk-TvY7L6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "client7": {
+      "7_claude_default": {
+        "key_display": "sk-0AnKXS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "7_claudeaws_default": {
+        "key_display": "sk-ieiCGv",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "cpcp": {
+      "y": {
+        "key_display": "sk-r4A9E9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "z": {
+        "key_display": "sk-Brsd3s",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "dakk": {
+      "dakk_claudecode_default": {
+        "key_display": "sk-soVsEc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "dbwuwdb": {
+      "0320_CLAUDE": {
+        "key_display": "sk-rKxgRr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "aqara_lzw_claude": {
+        "key_display": "sk-AP4n8v",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "bafuwangluo-claude": {
+        "key_display": "sk-aHsg4g",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "bafuwangluo-gemini": {
+        "key_display": "sk-WwgrCK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "bafuwangluo-gpt": {
+        "key_display": "sk-FBopm9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "changxiang-0304-claude": {
+        "key_display": "sk-8amEGQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "changxiang-0304-gpt": {
+        "key_display": "sk-aNC7K9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "COMBO_test": {
+        "key_display": "sk-njbyRN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "d2_default_claude": {
+        "key_display": "sk-lqrZLs",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "d2_default_gemini": {
+        "key_display": "sk-XwvyRy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "d2_default_gpt": {
+        "key_display": "sk-qaP8M2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Google_031215": {
+        "key_display": "sk-okqmN1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "huiban_test_claudecode": {
+        "key_display": "sk-2SE26F",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "HYHY_0316_GEMINI": {
+        "key_display": "sk-TrSVgO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "HYHY_0316_GPT": {
+        "key_display": "sk-hPDktJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jeff-xiaolou-test-claude": {
+        "key_display": "sk-BB4sc9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jiajiashun_ZHW_claude": {
+        "key_display": "sk-4rk3u0",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "JKTD_default_anthropic": {
+        "key_display": "sk-X7WmaS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jl_default_claude": {
+        "key_display": "sk-eO5NSU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jl_default_gemini": {
+        "key_display": "sk-v0REf6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jl_default_gpt": {
+        "key_display": "sk-PfYWTU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "junyun_ZHQ_claude": {
+        "key_display": "sk-LwRkTE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "junyun_ZHQ_gemini": {
+        "key_display": "sk-RHDiko",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "junyun_ZHQ_gpt": {
+        "key_display": "sk-qTlHbq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "key_default_claude": {
+        "key_display": "sk-4ZAtlq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "KL-0318_gemini": {
+        "key_display": "sk-Y0Uc6q",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lewo_ZHQ_claude": {
+        "key_display": "sk-xHAJ2C",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lyzysxzn_gemini": {
+        "key_display": "sk-zf7z45",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "LZD_0318_Claude": {
+        "key_display": "sk-FQXohH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "LZD_0318_gpt": {
+        "key_display": "sk-4u5430",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ningkun-lzw-claude": {
+        "key_display": "sk-U2wLcq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ningkun-lzw-gemini": {
+        "key_display": "sk-NW11qT",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ningkun-lzw-gpt": {
+        "key_display": "sk-9QvDVQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "novalinks_aws": {
+        "key_display": "sk-J84zCz",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Prisma_Claude": {
+        "key_display": "sk-CQzgPt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "saul_0320_claude": {
+        "key_display": "sk-R2sXsF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "saul_0320_gemini": {
+        "key_display": "sk-ebBjhm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "saul_0320_gpt": {
+        "key_display": "sk-6PhUdu",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SCASH-EY-claude": {
+        "key_display": "sk-k2smIH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SCASH-EY-gemini": {
+        "key_display": "sk-IDGaa2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SCASH-EY-GPT": {
+        "key_display": "sk-M2Eqt7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sigmateai_deepseek": {
+        "key_display": "sk-4vxziO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Siraya-0313-gpt": {
+        "key_display": "sk-S7Cc0v",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Siraya-0313-other": {
+        "key_display": "sk-aOxhye",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "STWL_ZHQ_gemini": {
+        "key_display": "sk-PkF2OV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sunninthehell_": {
+        "key_display": "sk-7Msrzi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sunninthehell_aws": {
+        "key_display": "sk-aLFAL1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sunninthehell_claude": {
+        "key_display": "sk-hIFcp4",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sunninthehell_gpt": {
+        "key_display": "sk-as0Cu7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sw15_claude": {
+        "key_display": "sk-wQz9Le",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sw15_gemini": {
+        "key_display": "sk-9FBu8C",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "szty_zhq_claudecode": {
+        "key_display": "sk-Y7jWPG",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "t3b6g_0325_claude": {
+        "key_display": "sk-cZOoG8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "t3b6g_0325_gemini": {
+        "key_display": "sk-haqOxW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "t3b6g_0325_GPT": {
+        "key_display": "sk-95yXAL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiyue-gpt-image2-test": {
+        "key_display": "sk-HLhABo",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test_sdj": {
+        "key_display": "sk-Jhjqje",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test-03-16": {
+        "key_display": "sk-pahAdO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test-user-Alice": {
+        "key_display": "sk-VLE0Ob",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Test-龚智勇": {
+        "key_display": "sk-ysHqKR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "tw-0311-claude": {
+        "key_display": "sk-UGgR8L",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "tw-0311-gemini": {
+        "key_display": "sk-TrsPI6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "tw-0311-gpt": {
+        "key_display": "sk-1y1bZk",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TWYX _ZHQ_claude": {
+        "key_display": "sk-MGyU7q",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TWYX_ZHQ_gemini": {
+        "key_display": "sk-HujZid",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "wangxuejun_0317": {
+        "key_display": "sk-wW820c",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "WLCD_test_claude": {
+        "key_display": "sk-ONoMzl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Wyne_defaullt_gpt": {
+        "key_display": "sk-m4qj58",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zhigang_default_claude": {
+        "key_display": "sk-5GW3Up",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zhouxiaoqiao_default_gpt": {
+        "key_display": "sk-LE64O1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "七杰_gemini": {
+        "key_display": "sk-V3MM3V",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "七杰_gpt": {
+        "key_display": "sk-Dkpv8m",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧-xw-Claude": {
+        "key_display": "sk-0ReG2L",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧-xw-gemini": {
+        "key_display": "sk-EvXvxg",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧-xw-gpt": {
+        "key_display": "sk-z2UrHt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧-xw-other": {
+        "key_display": "sk-vHrnYx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧xw_0313_cladue": {
+        "key_display": "sk-BuqaY3",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧xw_0313_gemini": {
+        "key_display": "sk-RSE0MV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海显胧xw_0313_gpt": {
+        "key_display": "sk-L80c4L",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海逸信_gpt": {
+        "key_display": "sk-NYGN4U",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "上海驰骛-lzw-claude": {
+        "key_display": "sk-OeQmTR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "乐君科技_LZD_Claude": {
+        "key_display": "sk-8pWmzN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "九吨科技_LZD_gpt": {
+        "key_display": "sk-WBZEbv",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "九吨科技_LZD_SORA2测试": {
+        "key_display": "sk-rBFzP0",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "华人文化-lzw-gemini": {
+        "key_display": "sk-l9J602",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "多比旅行_test_claude": {
+        "key_display": "sk-nYDle1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "安畅-小鱼儿-claude": {
+        "key_display": "sk-OaqBrW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "安畅-小鱼儿-gemini": {
+        "key_display": "sk-XNGbSm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "安畅-小鱼儿-gpt": {
+        "key_display": "sk-HaMd1i",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "安畅-麦田-claude": {
+        "key_display": "sk-OJRrud",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "安畅-麦田-gemini": {
+        "key_display": "sk-2mf85s",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "安畅-麦田-gpt": {
+        "key_display": "sk-x14H5c",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "小减_ZHQ_Claude": {
+        "key_display": "sk-414E5M",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "小减_ZHQ_gemini": {
+        "key_display": "sk-j9ypFN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "小减_ZHQ_GPT": {
+        "key_display": "sk-qoWWLu",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "小鱼儿-碧桂园-claude": {
+        "key_display": "sk-fvnr6a",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "小鱼儿-碧桂园-gemini": {
+        "key_display": "sk-WeK89T",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "广州奇谷_aws_claude": {
+        "key_display": "sk-07knWS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "广州奇谷_test_claude": {
+        "key_display": "sk-aPJNgy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "开心音符_lzd_claude": {
+        "key_display": "sk-i0IAFW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "成都格斗_aws_claude": {
+        "key_display": "sk-XOdHmT",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "成都格斗_LZD_claude": {
+        "key_display": "sk-qDLLzE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "成都格斗_LZD_gemini": {
+        "key_display": "sk-c8h04C",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "成都格斗_LZD_gpt": {
+        "key_display": "sk-5a4Yrr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "杭州康晟_claude": {
+        "key_display": "sk-gQSYsA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "杭州康晟_gpt": {
+        "key_display": "sk-F2NyVE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "杭州氢雀_test_kiro": {
+        "key_display": "sk-jSbgXH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "杭州知衣科技-gemini": {
+        "key_display": "sk-LMQTuH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "森羽互连_XW_claude": {
+        "key_display": "sk-3rAZGW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "森羽互连_XW_gpt": {
+        "key_display": "sk-2ZST9W",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "浩总_was_claude": {
+        "key_display": "sk-T4oKY1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "漫剧客户-0309-gemini": {
+        "key_display": "sk-PZ06Jc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "百词斩_LZD_claude": {
+        "key_display": "sk-doikIl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "百词斩_LZD_gemini": {
+        "key_display": "sk-pLYlk0",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "百词斩_LZD_gpt": {
+        "key_display": "sk-yFdSYt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "眉山博雅_claude": {
+        "key_display": "sk-2GHQU5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "眉山博雅_test_gemini": {
+        "key_display": "sk-RojfDR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "礼鱼科技-claude": {
+        "key_display": "sk-CkM5U6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "礼鱼科技-gemini": {
+        "key_display": "sk-WJ4vlo",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "礼鱼科技-gpt": {
+        "key_display": "sk-3cKDbU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "精挑翻译_XW_claude": {
+        "key_display": "sk-dJFQK6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "精挑翻译_XW_DEEP": {
+        "key_display": "sk-OdYeBk",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "精挑翻译_XW_gemini": {
+        "key_display": "sk-LuLubU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "精挑翻译_XW_gpt": {
+        "key_display": "sk-GQo45P",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "运峰-gemini": {
+        "key_display": "sk-23zzky",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "运营内部测试专用": {
+        "key_display": "sk-5vrasK",
+        "total_cost": 0.2524,
+        "total_count": 11,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 10,
+            "completion_tokens": 29,
+            "cost": 0.000776,
+            "count": 1
+          },
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 8,
+            "completion_tokens": 16,
+            "cost": 0.000264,
+            "count": 1
+          },
+          "claude-haiku-4-5-20251001": {
+            "prompt_tokens": 10,
+            "completion_tokens": 33,
+            "cost": 0.000176,
+            "count": 1
+          },
+          "gpt-5.4": {
+            "prompt_tokens": 23,
+            "completion_tokens": 76,
+            "cost": 0.001196,
+            "count": 3
+          },
+          "gpt-image-2-web": {
+            "prompt_tokens": 10692,
+            "completion_tokens": 71360,
+            "cost": 0.25,
+            "count": 5
+          }
+        }
+      },
+      "远海国际_LZD_claude": {
+        "key_display": "sk-dQnHuO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "遥望科技_awsclaude": {
+        "key_display": "sk-fyondz",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "遥望科技_claude": {
+        "key_display": "sk-EA0n88",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Deskword": {
+      "Admin deskword": {
+        "key_display": "sk-8MHaG8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "AI API 1": {
+        "key_display": "sk-Xy2QYU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Claude Admin Deskword": {
+        "key_display": "sk-vLWaBW",
+        "total_cost": 3.4719,
+        "total_count": 19,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 980807,
+            "completion_tokens": 35296,
+            "cost": 3.471872,
+            "count": 19
+          }
+        }
+      },
+      "Claude Customer Service Deskword": {
+        "key_display": "sk-9rHBr8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude samsung mac": {
+        "key_display": "sk-5G8NUP",
+        "total_cost": 3.1117,
+        "total_count": 34,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 1010306,
+            "completion_tokens": 5381,
+            "cost": 3.111656,
+            "count": 34
+          }
+        }
+      },
+      "Customer Service Deskword ": {
+        "key_display": "sk-kqTFiK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Deskword 1 WS": {
+        "key_display": "sk-WRLi3E",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Deskword 2 yyds886": {
+        "key_display": "sk-uttLNR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Deskword 3 q9info": {
+        "key_display": "sk-3XnLol",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Deskword 3 q9info （2）": {
+        "key_display": "sk-v1MsTq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "deskword 4 magicfromspace": {
+        "key_display": "sk-3Y0VZY",
+        "total_cost": 43.0587,
+        "total_count": 130,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 13830181,
+            "completion_tokens": 104541,
+            "cost": 43.05873,
+            "count": 130
+          }
+        }
+      },
+      "Deskword 5 abwork6": {
+        "key_display": "sk-QFfWJh",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Deskword 6 ， LCTC424": {
+        "key_display": "sk-SRkM0y",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "deskword Amanda Sam_aws200": {
+        "key_display": "sk-w1RuH5",
+        "total_cost": 34.0885,
+        "total_count": 1018,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 6302090,
+            "completion_tokens": 1282224,
+            "cost": 34.08855,
+            "count": 1018,
+            "cache_hit_tokens": 400128
+          }
+        }
+      },
+      "Deskword claude wuming sam_aws200": {
+        "key_display": "sk-MolTvQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "deskword jisou Sam_aws200": {
+        "key_display": "sk-wLadve",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Deskword wuming sam_aws200": {
+        "key_display": "sk-b4XGf7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ethan Deskword": {
+        "key_display": "sk-crvW3c",
+        "total_cost": 0.4478,
+        "total_count": 2,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 148664,
+            "completion_tokens": 5075,
+            "cost": 0.447784,
+            "count": 2
+          }
+        }
+      },
+      "gary ali": {
+        "key_display": "sk-ncwbwK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "GMG 17 gemini": {
+        "key_display": "sk-0ozfO5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "isc erw63": {
+        "key_display": "sk-qUmEHi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "isc 鸿毛泰山FH": {
+        "key_display": "sk-TjMtiQ",
+        "total_cost": 4.9168,
+        "total_count": 20,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 1847113,
+            "completion_tokens": 25619,
+            "cost": 4.916824,
+            "count": 20,
+            "cache_hit_tokens": 37888
+          }
+        }
+      },
+      "issac": {
+        "key_display": "sk-mTbcgr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Issacc Kenneth": {
+        "key_display": "sk-ODT6Y2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Samsung mac": {
+        "key_display": "sk-EuFU6y",
+        "total_cost": 0.1858,
+        "total_count": 5,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 79854,
+            "completion_tokens": 344,
+            "cost": 0.185788,
+            "count": 5,
+            "cache_hit_tokens": 8448
+          }
+        }
+      },
+      "WF": {
+        "key_display": "sk-rM3U1f",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "wf claude": {
+        "key_display": "sk-EihYTU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "YC deskword": {
+        "key_display": "sk-aHJd2Z",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "YC Deskword Claude": {
+        "key_display": "sk-ZyWMLg",
+        "total_cost": 3.3439,
+        "total_count": 32,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 996195,
+            "completion_tokens": 23686,
+            "cost": 3.343898,
+            "count": 32
+          }
+        }
+      }
+    },
+    "dtyq": {
+      "dtyq_geminivertex_default": {
+        "key_display": "sk-xXjP8u",
+        "total_cost": 8.9814,
+        "total_count": 333,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 5192712,
+            "completion_tokens": 64243,
+            "cost": 5.105838,
+            "count": 60,
+            "cache_hit_tokens": 3361394
+          },
+          "gemini-3-flash-preview": {
+            "prompt_tokens": 18497903,
+            "completion_tokens": 427447,
+            "cost": 3.875514,
+            "count": 273,
+            "cache_hit_tokens": 14790704
+          }
+        }
+      },
+      "dtyq_image2_default": {
+        "key_display": "sk-ihVSD6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Dubaiuc": {
+      "chatgpt_default": {
+        "key_display": "sk-ipngOl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Dubaiuc_claudecode_default": {
+        "key_display": "sk-fxVFCm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Dubaiuc_geminivertex_default": {
+        "key_display": "sk-UGKzDZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Dubaiuc_gptazure_default": {
+        "key_display": "sk-z0YOyB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "duobilx": {
+      "dobby-cc": {
+        "key_display": "sk-6JhNm3",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "GPT 5.4": {
+        "key_display": "sk-Pe8RhD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "多比旅行_aws_claude": {
+        "key_display": "sk-fRj3Ni",
+        "total_cost": 0.1415,
+        "total_count": 3,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 46241,
+            "completion_tokens": 182,
+            "cost": 0.141456,
+            "count": 3
+          }
+        }
+      },
+      "多比旅行_gpt": {
+        "key_display": "sk-EpAg8G",
+        "total_cost": 0.1392,
+        "total_count": 1,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 55098,
+            "completion_tokens": 99,
+            "cost": 0.13923,
+            "count": 1
+          }
+        }
+      },
+      "多比旅行_test_claude": {
+        "key_display": "sk-iIXMIX",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "duxiaoman": {
+      "duxiaoman_default_claude": {
+        "key_display": "sk-5BDwSJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "dxm0326_default_claude": {
+        "key_display": "sk-NDS25E",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "user0320_default_gpt_azure": {
+        "key_display": "sk-i4OJOx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "dxm0312": {
+      "dxm_default": {
+        "key_display": "sk-0oCoBu",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "eclehk": {
+      "eclehk_default_aws": {
+        "key_display": "sk-6mHxRJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "eclehk_default_gemini": {
+        "key_display": "sk-Bf8ti9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "eclehk_default_gpt": {
+        "key_display": "sk-xGpZda",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt_5.5_coding": {
+        "key_display": "sk-yXDMXC",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Eric": {
+      "Eric_claudecode": {
+        "key_display": "sk-ICI9yD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "feiluo": {
+      "feiluo_claude_default": {
+        "key_display": "sk-y1bvr1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "feiluo_gemini_default": {
+        "key_display": "sk-YUIhua",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "feiluo_gpt_default": {
+        "key_display": "sk-CbTCJz",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "feioutan": {
+      "菲欧坦_测试_AWS": {
+        "key_display": "sk-4FPY1X",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "菲欧坦_测试_gemini": {
+        "key_display": "sk-zHgSeH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "菲欧坦_测试_GPT": {
+        "key_display": "sk-3awfpW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "fluxuser0206": {
+      "fluxuser0206_claudeaws_default": {
+        "key_display": "sk-duWcCo",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "flyairunner": {
+      "1": {
+        "key_display": "sk-g0OGoA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "gavin01": {
+      "gavin01_claudecode_default": {
+        "key_display": "sk-n6lkGa",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "gavin02": {
+      "gavin02_claudecode_default": {
+        "key_display": "sk-W5mZ0h",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "gavin03": {
+      "gavin03_claudecode_default": {
+        "key_display": "sk-KtZfD3",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "geminiUser0129": {
+      "default": {
+        "key_display": "sk-gYMvOr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "geminivchuer": {
+      "geminivchuer_default": {
+        "key_display": "sk-CNhND9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "GGgemini": {
+      "gg": {
+        "key_display": "sk-yDVn1c",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "GMN": {
+      "GMN_gemini": {
+        "key_display": "sk-KRayzy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "hanniba": {
+      "1": {
+        "key_display": "sk-C1oivd",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "HARAI": {
+      "HARAI_claude_default": {
+        "key_display": "sk-0h2tg4",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "hduser": {
+      "hd_image2_web": {
+        "key_display": "sk-EFIBCU",
+        "total_cost": 944.5,
+        "total_count": 18890,
+        "details": {
+          "gpt-image-2-web": {
+            "prompt_tokens": 5520851,
+            "completion_tokens": 133474978,
+            "cost": 944.5,
+            "count": 18890
+          }
+        }
+      }
+    },
+    "hlgz": {
+      "hlgz_default_claudecode": {
+        "key_display": "sk-vgG2mb",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Hugo": {
+      "Hugo_geminiother": {
+        "key_display": "sk-qtf5SS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "HYTX": {
+      "HYTX_claudecode_default": {
+        "key_display": "sk-jdagH2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "HYTX_geminivertex_default": {
+        "key_display": "sk-S0ho1M",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "HYTX_gptazure_default": {
+        "key_display": "sk-wNO9d0",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "hzqq": {
+      "hzqq_claude": {
+        "key_display": "sk-kG1NWZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "hzqq_kiro_test": {
+        "key_display": "sk-6eisn5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "imagej": {
+      "imagej_claude_default": {
+        "key_display": "sk-mwVgVU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "imagej_gemini_default": {
+        "key_display": "sk-8RaOEf",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "jijie": {
+      "jijie_claude_aws": {
+        "key_display": "sk-pLcyoi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jijie_claude_aws1": {
+        "key_display": "sk-b49wGr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jijie_claudecode": {
+        "key_display": "sk-LaBgaw",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "JKTD": {
+      "JKTD_default_anthropic": {
+        "key_display": "sk-HtVRev",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "JQSM": {
+      "JQSM_test_awsclaude": {
+        "key_display": "sk-QaJPV4",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "JSQB": {
+      "JSQB_claduecode": {
+        "key_display": "sk-a2CbiI",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "JSQB_gemini": {
+        "key_display": "sk-lb9xcB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "JSQB_gpt_azure": {
+        "key_display": "sk-B1m6BF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "JSQB_gpt_oai": {
+        "key_display": "sk-aYlJIL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "junyun": {
+      "junyun_aws": {
+        "key_display": "sk-39FTl5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "junyun_claude": {
+        "key_display": "sk-8PMAGq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "junyun_gemini": {
+        "key_display": "sk-r7a678",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "junyun_gpt": {
+        "key_display": "sk-nPYHpt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "jxqb": {
+      "jxqb_test_aws": {
+        "key_display": "sk-IeXVuq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "key-0204": {
+      "key-0204_geminivertex_default": {
+        "key_display": "sk-d3Gz1C",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "KL": {
+      "KL_claudecode_default": {
+        "key_display": "sk-z0BHEa",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "KL-2050": {
+      "KL_default_sora2": {
+        "key_display": "sk-fCxIwo",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "kunlun": {
+      "kunlun_aws_claude": {
+        "key_display": "sk-sPdnAj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "kunlun_gemini": {
+        "key_display": "sk-7cqBt5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "kv-laoma-0205": {
+      "kv-laoma-0205_claudecode_default": {
+        "key_display": "sk-qnPzOE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "kv-laoma-02061": {
+      "kv-laoma-02061_claudecode_default": {
+        "key_display": "sk-JVxtYl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "kv-laoma-02062": {
+      "kv-laoma-02062_claudecode_default": {
+        "key_display": "sk-P9umTn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "kv-ps": {
+      "ps_default_claude": {
+        "key_display": "sk-eKGpLT",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Kyclo": {
+      "Kyclo_default": {
+        "key_display": "sk-YHeTA0",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "lanse2025": {
+      "gemini": {
+        "key_display": "sk-DTNGH8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "lewo": {
+      "lewo_default_aw": {
+        "key_display": "sk-qJBbQS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lewo_default_azure": {
+        "key_display": "sk-OPBISl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lewo_default_code": {
+        "key_display": "sk-NtXOJ5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lewo_default_kiro": {
+        "key_display": "sk-MDgsn7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "linda": {
+      "linda_test_gemini": {
+        "key_display": "sk-xeB6iq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "lingyu": {
+      "lingyu_default_claude": {
+        "key_display": "sk-4USDGU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lingyu_default_gemini": {
+        "key_display": "sk-DjumXx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lingyu_default_gpt": {
+        "key_display": "sk-uEZGTT",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lingyu_test_default_gemini": {
+        "key_display": "sk-nBzIZL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "liyukeji": {
+      "liyu_default_aws": {
+        "key_display": "sk-BC7UYA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "liyu_default_claudecode": {
+        "key_display": "sk-xQM8O5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "liyu_default_Gemini": {
+        "key_display": "sk-op1x7S",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "liyu_default_gpt": {
+        "key_display": "sk-pISAqv",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "liyukeji2": {
+      "liyu2_default_claudecode": {
+        "key_display": "sk-fLfLfe",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "liyu2_default_gemini": {
+        "key_display": "sk-vU2eQS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "liyu2_default_gpt": {
+        "key_display": "sk-Xt75q5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "long0324": {
+      "all": {
+        "key_display": "sk-QdVQ3w",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "long_default_gpt": {
+        "key_display": "sk-w7WeF8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "qwen3.5-plus": {
+        "key_display": "sk-OJlkA3",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "longai": {
+      "default_claude": {
+        "key_display": "sk-OZuF5V",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "longhu": {
+      "longhu_claude_default": {
+        "key_display": "sk-R61Rov",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "longhu_gemini_default": {
+        "key_display": "sk-rgzwTN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "longlaoshi": {
+      "longlaoshi_claudecode": {
+        "key_display": "sk-nfe3YQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "longlaoshi_deepseek": {
+        "key_display": "sk-dSEuHg",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "longlaoshi_gemini": {
+        "key_display": "sk-Kd85P7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "longlaoshi_gpt": {
+        "key_display": "sk-WFCnPU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "lyzykswl": {
+      "lyzykswl_default_claude": {
+        "key_display": "sk-j5cZy6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "lyzykswl_default_gemini": {
+        "key_display": "sk-fKYv2Q",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "LZF": {
+      "LZF_claduecode_default": {
+        "key_display": "sk-xXdFTU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "LZF_geminivertex_default": {
+        "key_display": "sk-P5WDOi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ma-edai": {
+      "ma-edai_gpt_default": {
+        "key_display": "sk-pZtZqa",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ma-edai2": {
+      "ma-edai2_claudecode_default": {
+        "key_display": "sk-hG96jJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ma-edai2_gemini_default": {
+        "key_display": "sk-38bZWp",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ma-sam-0221": {
+      "ma-edward-0221_claudecode_default": {
+        "key_display": "sk-Cs56KF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "maiya": {
+      "maiya_default_aws": {
+        "key_display": "sk-JZQBxP",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "maiya_default_gemini": {
+        "key_display": "sk-FNbr7S",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "maiya_default_gpt": {
+        "key_display": "sk-TNL3jL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "maiya_default_image2_web": {
+        "key_display": "sk-WejlDn",
+        "total_cost": 0.95,
+        "total_count": 13,
+        "details": {
+          "gpt-image-2-web": {
+            "prompt_tokens": 2858,
+            "completion_tokens": 24158,
+            "cost": 0.95,
+            "count": 13
+          }
+        }
+      },
+      "maiya_test_aws": {
+        "key_display": "sk-5MoK5a",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "maiya_test_claude": {
+        "key_display": "sk-GJwXes",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "maiya_test_gemini": {
+        "key_display": "sk-kIDJQL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "maiya_test_gpt": {
+        "key_display": "sk-0Jszvt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "malaysiadp": {
+      "malaysiadp_claudeaws_default": {
+        "key_display": "sk-qVDCpN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "malaysiadp_geminivertex_default": {
+        "key_display": "sk-DNbKTQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "malaysiadp_gptazure_default": {
+        "key_display": "sk-Fcoe4x",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "miss": {
+      "aa": {
+        "key_display": "sk-MjRyHE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "mixai": {
+      "mixai": {
+        "key_display": "sk-LApKkI",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "mixai_claude_default": {
+        "key_display": "sk-otZVCh",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Mm-gpt": {
+      "Mm-gpt_gptazure_default": {
+        "key_display": "sk-floGSY",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "modan": {
+      "aa": {
+        "key_display": "sk-da05dB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "aaaa": {
+        "key_display": "sk-KNCbRX",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "MT": {
+      "MT_azure_default": {
+        "key_display": "sk-vPOPqP",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "MT_claudecode": {
+        "key_display": "sk-Rnuc0c",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "MT_gemini_default": {
+        "key_display": "sk-C3t9at",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "MT_geminivertex2_default": {
+        "key_display": "sk-46x0kl",
+        "total_cost": 7.3345,
+        "total_count": 224,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 1002302,
+            "completion_tokens": 390683,
+            "cost": 6.583112,
+            "count": 178,
+            "cache_hit_tokens": 60938
+          },
+          "gemini-3-flash-preview": {
+            "prompt_tokens": 9231,
+            "completion_tokens": 3390,
+            "cost": 0.01111,
+            "count": 1,
+            "cache_hit_tokens": 8168
+          },
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 105428,
+            "completion_tokens": 46603,
+            "cost": 0.095352,
+            "count": 15,
+            "cache_hit_tokens": 4040
+          },
+          "gemini-2.5-pro": {
+            "prompt_tokens": 4,
+            "completion_tokens": 470,
+            "cost": 0.004704,
+            "count": 2
+          },
+          "gemini-2.5-flash": {
+            "prompt_tokens": 109316,
+            "completion_tokens": 242987,
+            "cost": 0.640264,
+            "count": 28
+          }
+        }
+      },
+      "MT_openai_default": {
+        "key_display": "sk-PKkL4r",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "MT-sora2pro": {
+      "MT-sora2pro_azure": {
+        "key_display": "sk-bEzC9F",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "MT-sora2pro_openai": {
+        "key_display": "sk-EJdg96",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "muzi": {
+      "003": {
+        "key_display": "sk-oUzmIt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "004": {
+        "key_display": "sk-VdEHN2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "005": {
+        "key_display": "sk-4G8NkG",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "12132": {
+        "key_display": "sk-HqEIKy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "abc": {
+        "key_display": "sk-oQiDu9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "loo": {
+        "key_display": "sk-frNFQd",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "muzi": {
+        "key_display": "sk-HeYzSI",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "nieruokeji": {
+      "nieruo_default_gemini_image": {
+        "key_display": "sk-5nXKSq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nieruo_default_gemini_text": {
+        "key_display": "sk-axmfkN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nieruo_default_gpt": {
+        "key_display": "sk-E5Ug5W",
+        "total_cost": 215.7683,
+        "total_count": 47086,
+        "details": {
+          "gpt-5-mini": {
+            "prompt_tokens": 464949295,
+            "completion_tokens": 53508631,
+            "cost": 215.76835,
+            "count": 47086,
+            "cache_hit_tokens": 33294080
+          }
+        }
+      },
+      "nieruo_default_sora": {
+        "key_display": "sk-UIukEV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nieruokeji_041501_aws": {
+        "key_display": "sk-pbKGyW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nieruokeji_041502_aws": {
+        "key_display": "sk-yZFf4t",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nieruokeji_default_aws": {
+        "key_display": "sk-DfGtiW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nieruokeji_default_claude": {
+        "key_display": "sk-95JW51",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "nineling": {
+      "nineling_claude": {
+        "key_display": "sk-MvyknI",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nineling_gemini": {
+        "key_display": "sk-MEYGYi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "nineling_gpt": {
+        "key_display": "sk-dTQACZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ningkun": {
+      "ningkun_claude": {
+        "key_display": "sk-6R1idh",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ningkun_gemini": {
+        "key_display": "sk-EutgE5",
+        "total_cost": 0.4321,
+        "total_count": 36,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 259749,
+            "completion_tokens": 18036,
+            "cost": 0.432052,
+            "count": 36,
+            "cache_hit_tokens": 168821
+          }
+        }
+      },
+      "ningkun_gpt": {
+        "key_display": "sk-op9CgH",
+        "total_cost": 0.5485,
+        "total_count": 14,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 199602,
+            "completion_tokens": 4301,
+            "cost": 0.548548,
+            "count": 14,
+            "cache_hit_tokens": 6656
+          }
+        }
+      },
+      "ningkun_np_claude": {
+        "key_display": "sk-WhXNSJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ningkun_np_gemini": {
+        "key_display": "sk-1bbiBy",
+        "total_cost": 0.0914,
+        "total_count": 3,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 3661,
+            "completion_tokens": 7005,
+            "cost": 0.091382,
+            "count": 3
+          }
+        }
+      },
+      "ningkun_np_GPT": {
+        "key_display": "sk-SHm7cF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ocid": {
+      "ocid_gemini_default": {
+        "key_display": "sk-t3GaLD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "openai": {
+      "vcard": {
+        "key_display": "sk-BB9UAn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "oupai-pp": {
+      "oupai-pp_claudecode_default": {
+        "key_display": "sk-TwdMFa",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "packy": {
+      "rocky_claude": {
+        "key_display": "sk-kSmIfE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "rocky_gemini": {
+        "key_display": "sk-14Dq9s",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "rocky_gpt": {
+        "key_display": "sk-qawQMh",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "pangboshi": {
+      "pangboshi_claudecode": {
+        "key_display": "sk-UKCAfr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "peter": {
+      "peter_azure_default": {
+        "key_display": "sk-KLqW6W",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "peter_openai_default": {
+        "key_display": "sk-TO65aK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ppsora": {
+      "pp_claude_default": {
+        "key_display": "sk-9IJQQw",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "pp_sora_default": {
+        "key_display": "sk-CARjhU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "puyueAI": {
+      "puyueAI_geminivertex_default": {
+        "key_display": "sk-Fm7scO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "qijie": {
+      "gpt_image_2": {
+        "key_display": "sk-t2WTrK",
+        "total_cost": 5.0556,
+        "total_count": 21,
+        "details": {
+          "gpt-image-2": {
+            "prompt_tokens": 32495,
+            "completion_tokens": 159856,
+            "cost": 5.05564,
+            "count": 21
+          }
+        }
+      },
+      "qijie_gemini_image": {
+        "key_display": "sk-t5AUZh",
+        "total_cost": 4.9595,
+        "total_count": 47,
+        "details": {
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 35090,
+            "completion_tokens": 84765,
+            "cost": 3.97457,
+            "count": 40,
+            "image_output_tokens": 64960
+          },
+          "gemini-3-pro-image-preview": {
+            "prompt_tokens": 5742,
+            "completion_tokens": 10558,
+            "cost": 0.9849,
+            "count": 7,
+            "image_output_tokens": 7840
+          }
+        }
+      },
+      "qijie_image_2_web": {
+        "key_display": "sk-buVYX5",
+        "total_cost": 7.55,
+        "total_count": 151,
+        "details": {
+          "gpt-image-2-web": {
+            "prompt_tokens": 196954,
+            "completion_tokens": 1172696,
+            "cost": 7.55,
+            "count": 151
+          }
+        }
+      }
+    },
+    "qingfeng": {
+      "104.194站": {
+        "key_display": "sk-BK3nqx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "38站": {
+        "key_display": "sk-0zfa8Z",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "aidaxue": {
+        "key_display": "sk-y9S6Qt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "aidx": {
+        "key_display": "sk-hcGW68",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jy": {
+        "key_display": "sk-4ZLEpx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "pl": {
+        "key_display": "sk-ntQGw5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "tb": {
+        "key_display": "sk-7H0hdA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "work站": {
+        "key_display": "sk-lzSCjR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "QIQuser": {
+      "QIQuser_image_2": {
+        "key_display": "sk-VsoYu7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "qzbinmu": {
+      "1": {
+        "key_display": "sk-mLUHIi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "rki-user20260129": {
+      "测试令牌": {
+        "key_display": "sk-59J3XN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "saul0318": {
+      "saul0318_claudecode": {
+        "key_display": "sk-Ke6QSz",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "SBT": {
+      "SBT_test_claude": {
+        "key_display": "sk-uuzcEq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "SBT2": {
+      "SBT2_test_gemini": {
+        "key_display": "sk-YPec7a",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "seaclaude": {
+      "seaclaude_default": {
+        "key_display": "sk-80vDdn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "seasora": {
+      "sea_sora_azure_default": {
+        "key_display": "sk-g1QxBg",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sea_sora_default": {
+        "key_display": "sk-vSW5Io",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "sh0423": {
+      "sh_test_gpt": {
+        "key_display": "sk-zcm1io",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "shangyou": {
+      "shangyou_test_claude": {
+        "key_display": "sk-uTAyvc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test0021_default_gpt": {
+        "key_display": "sk-zao9Fb",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "shellapi": {
+      "1112222": {
+        "key_display": "sk-ieFH7O",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "cc": {
+        "key_display": "sk-2i5xvA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gemini系列": {
+        "key_display": "sk-ypwJOQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "shyuanyi_test": {
+      "test_default_claude": {
+        "key_display": "sk-I48ia8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test_default_gemini": {
+        "key_display": "sk-uZ90H6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test_default_gpt": {
+        "key_display": "sk-XOylFj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "SigmateAI": {
+      "SigmateAI_claudecode": {
+        "key_display": "sk-K0o25r",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SigmateAI_geminivertex": {
+        "key_display": "sk-3el7vM",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SigmateAI_gptazure": {
+        "key_display": "sk-nmYiUx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "SigmateAI0309": {
+      "SigmateAI0309_claudecode": {
+        "key_display": "sk-0AMBpt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SigmateAI0309_gemini": {
+        "key_display": "sk-WgzZNd",
+        "total_cost": 17.2038,
+        "total_count": 3905,
+        "details": {
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 96502,
+            "completion_tokens": 57472,
+            "cost": 0.110354,
+            "count": 186
+          },
+          "gemini-flash-lite-latest": {
+            "prompt_tokens": 2304489,
+            "completion_tokens": 1761563,
+            "cost": 3.218882,
+            "count": 3596
+          },
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 1753235,
+            "completion_tokens": 932973,
+            "cost": 13.847764,
+            "count": 117,
+            "cache_hit_tokens": 474665
+          },
+          "gemini-3-flash-preview": {
+            "prompt_tokens": 11046,
+            "completion_tokens": 7091,
+            "cost": 0.026798,
+            "count": 6
+          }
+        }
+      },
+      "SigmateAI0309_gptazure": {
+        "key_display": "sk-QlPCog",
+        "total_cost": 491.1501,
+        "total_count": 9827,
+        "details": {
+          "gpt-image-2-web": {
+            "prompt_tokens": 581034,
+            "completion_tokens": 46103075,
+            "cost": 491.15,
+            "count": 9823
+          },
+          "gpt-4.1-mini": {
+            "prompt_tokens": 30,
+            "completion_tokens": 4,
+            "cost": 2e-05,
+            "count": 2
+          },
+          "gpt-4.1": {
+            "prompt_tokens": 30,
+            "completion_tokens": 4,
+            "cost": 9.2e-05,
+            "count": 2
+          }
+        }
+      },
+      "SigmateAI0316_deepseek": {
+        "key_display": "sk-cLzpbA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Siraya-02": {
+      "Siraya-02_deepseek_default": {
+        "key_display": "sk-VBC4Oy",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "snowball": {
+      "snowball_claudecode_default": {
+        "key_display": "sk-zz2IfB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "song01": {
+      "song01_claudecode_default": {
+        "key_display": "sk-ZlJKRr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "song01_geminivertex_default": {
+        "key_display": "sk-Tu3aDU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "song01_gptazure_default": {
+        "key_display": "sk-s5ED75",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "sorauser0120": {
+      "sora_openai": {
+        "key_display": "sk-CHip7l",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "STWL": {
+      "STWL_gemini": {
+        "key_display": "sk-LmmLmd",
+        "total_cost": 0.6257,
+        "total_count": 14,
+        "details": {
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 2254,
+            "completion_tokens": 6257,
+            "cost": 0.27526,
+            "count": 7,
+            "image_output_tokens": 4480
+          },
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 7576,
+            "completion_tokens": 2014,
+            "cost": 0.004916,
+            "count": 3
+          },
+          "gemini-3-pro-image-preview": {
+            "prompt_tokens": 2287,
+            "completion_tokens": 8250,
+            "cost": 0.345494,
+            "count": 4,
+            "image_output_tokens": 2240
+          }
+        }
+      }
+    },
+    "SZ": {
+      "SZ_sora_default": {
+        "key_display": "sk-nLz43e",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "SZ_soraazure_default": {
+        "key_display": "sk-YxdzzR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "szchangcheng": {
+      "szchangcheng_claudecode_default": {
+        "key_display": "sk-hYyclk",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "szty1": {
+      "musicai_nano": {
+        "key_display": "sk-5PQ3c8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sondo_nano": {
+        "key_display": "sk-pA63wC",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "szty1_claude_default": {
+        "key_display": "sk-aBtdGR",
+        "total_cost": 12.6715,
+        "total_count": 104,
+        "details": {
+          "claude-opus-4-5-20251101": {
+            "prompt_tokens": 458105,
+            "completion_tokens": 415236,
+            "cost": 12.671478,
+            "count": 104
+          }
+        }
+      },
+      "szty1_claude_default2": {
+        "key_display": "sk-r4B4NQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "szty1_claude_default3": {
+        "key_display": "sk-BJqJ1W",
+        "total_cost": 0.0071,
+        "total_count": 1,
+        "details": {
+          "claude-opus-4-5-20251101": {
+            "prompt_tokens": 701,
+            "completion_tokens": 144,
+            "cost": 0.007106,
+            "count": 1
+          }
+        }
+      },
+      "周辉华": {
+        "key_display": "sk-CTBtqi",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "szty2": {
+      "musicai_claude": {
+        "key_display": "sk-FCkPNk",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "sondo_claude": {
+        "key_display": "sk-WoQk43",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "szty2_claude_default": {
+        "key_display": "sk-XRQeym",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "szty2_claude_default2": {
+        "key_display": "sk-Ix8hCB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "szty2_claude_default3": {
+        "key_display": "sk-7486wV",
+        "total_cost": 23.7112,
+        "total_count": 2305,
+        "details": {
+          "claude-sonnet-4-5-20250929": {
+            "prompt_tokens": 218495,
+            "completion_tokens": 58527,
+            "cost": 1.533512,
+            "count": 219
+          },
+          "claude-opus-4-5-20251101": {
+            "prompt_tokens": 1361576,
+            "completion_tokens": 614755,
+            "cost": 22.177714,
+            "count": 2086
+          }
+        }
+      },
+      "周辉华": {
+        "key_display": "sk-ZgPJuq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "sztycc": {
+      "sztycc_claudecode": {
+        "key_display": "sk-ffZzi5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "taijiagnet": {
+      "taiji01": {
+        "key_display": "sk-ZF7x6V",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiji02": {
+        "key_display": "sk-EULf5d",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiji03": {
+        "key_display": "sk-gQShee",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiji04": {
+        "key_display": "sk-stcHmm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiji05": {
+        "key_display": "sk-KgPkHf",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiji06": {
+        "key_display": "sk-6No6OO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taiji07": {
+        "key_display": "sk-CVkru9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "taijiagnet": {
+        "key_display": "sk-MpcSsJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xiaohei": {
+        "key_display": "sk-pxhljZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xiaohei1": {
+        "key_display": "sk-w13a1O",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "自用claudecode": {
+        "key_display": "sk-k3PHzN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "自用gemini": {
+        "key_display": "sk-ckwOsY",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "自用gpt": {
+        "key_display": "sk-cd2wvw",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "taiyuegpt2": {
+      "taiyue_gpt_image2": {
+        "key_display": "sk-jPWrz1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "tapuser": {
+      "tapuser_test_gptimageweb": {
+        "key_display": "sk-XJAVZB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "TCAIshenzhen": {
+      "felix": {
+        "key_display": "sk-3fsS2L",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "TeslaAI客服": {
+      "all": {
+        "key_display": "sk-GAI9GV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "deepseek": {
+        "key_display": "sk-is5gxD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Kimi": {
+        "key_display": "sk-ZpWq1k",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TeslaAI_default_claude": {
+        "key_display": "sk-v42qKM",
+        "total_cost": 4.0227,
+        "total_count": 40,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 75003,
+            "completion_tokens": 304,
+            "cost": 4.022672,
+            "count": 40,
+            "cache_creation_5m_tokens": 1011492
+          }
+        }
+      },
+      "TeslaAI_default_gemini": {
+        "key_display": "sk-xqRKzp",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TeslaAI_default_gpt": {
+        "key_display": "sk-hxQ0RA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "test20260508": {
+      "test20260508_claudeother": {
+        "key_display": "sk-g2CWNc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "testuser0114": {
+      "aws_default": {
+        "key_display": "sk-r1yyBG",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "azure_default": {
+        "key_display": "sk-X6TQdc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "code_default": {
+        "key_display": "sk-S29vKO",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gemini_default": {
+        "key_display": "sk-bjKppj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "testuser0117": {
+      "claudecode_default": {
+        "key_display": "sk-FFz333",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gemini_default": {
+        "key_display": "sk-7K8vIQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt_default": {
+        "key_display": "sk-kIWJ0M",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "testuser0120": {
+      "gemini_default": {
+        "key_display": "sk-L7ac1i",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "testuser0120_gemini_default": {
+        "key_display": "sk-MDlQ7w",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "tinpo": {
+      "42": {
+        "key_display": "sk-Zt5RaH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Gemini": {
+        "key_display": "sk-X2nVkN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "tom": {
+      "tom_openai_defualt": {
+        "key_display": "sk-TLbI4G",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "touka": {
+      "touka_427_aws": {
+        "key_display": "sk-jn8kxu",
+        "total_cost": 317.3853,
+        "total_count": 1726,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 6157,
+            "completion_tokens": 34744,
+            "cost": 28.368014,
+            "count": 189,
+            "cache_hit_tokens": 39076988,
+            "cache_creation_5m_tokens": 1268818
+          },
+          "claude-opus-4-7": {
+            "prompt_tokens": 44302,
+            "completion_tokens": 543736,
+            "cost": 235.04732,
+            "count": 792,
+            "cache_hit_tokens": 342289941,
+            "cache_creation_5m_tokens": 8013978
+          },
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 3444424,
+            "completion_tokens": 831069,
+            "cost": 53.969946,
+            "count": 745,
+            "cache_hit_tokens": 44635777,
+            "cache_creation_5m_tokens": 4741297
+          }
+        }
+      },
+      "touka_default_claude_aws": {
+        "key_display": "sk-E5SchW",
+        "total_cost": 24.4233,
+        "total_count": 351,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 3463,
+            "completion_tokens": 44206,
+            "cost": 16.023876,
+            "count": 187,
+            "cache_hit_tokens": 20974403,
+            "cache_creation_5m_tokens": 706269
+          },
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 2465,
+            "completion_tokens": 152128,
+            "cost": 8.399392,
+            "count": 164,
+            "cache_hit_tokens": 7567922,
+            "cache_creation_5m_tokens": 1023921
+          }
+        }
+      },
+      "touka_default_claude_code": {
+        "key_display": "sk-Ct6lJI",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "touka_default_gemini_image": {
+        "key_display": "sk-g3s1z1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "touka_default_gemini_text": {
+        "key_display": "sk-bOgEHe",
+        "total_cost": 0.1736,
+        "total_count": 17,
+        "details": {
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 63950,
+            "completion_tokens": 11624,
+            "cost": 0.033428,
+            "count": 13
+          },
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 23776,
+            "completion_tokens": 5056,
+            "cost": 0.108224,
+            "count": 3
+          },
+          "gemini-3-pro-preview": {
+            "prompt_tokens": 17242,
+            "completion_tokens": 2234,
+            "cost": 0.031996,
+            "count": 1,
+            "cache_hit_tokens": 16276
+          }
+        }
+      },
+      "touka_default_gpt": {
+        "key_display": "sk-1nGw3B",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "touka_default_gpt_sora": {
+        "key_display": "sk-EUWfdc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "touke_anthropic": {
+        "key_display": "sk-pW5q9L",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "TSL": {
+      "anthropic": {
+        "key_display": "sk-kwK6Su",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude code group": {
+        "key_display": "sk-hh10EA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude_code": {
+        "key_display": "sk-tPbWWb",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claudecode": {
+        "key_display": "sk-Be9ycA",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "google-gemini": {
+        "key_display": "sk-AQZ3rv",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt_5.2(openapi)": {
+        "key_display": "sk-XVnJSB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt5.2": {
+        "key_display": "sk-wm2czb",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TSL_geminivertex_default": {
+        "key_display": "sk-DAZGgL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TSL_gptazure_default": {
+        "key_display": "sk-0ScjHf",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ttc-user20260129": {
+      "test": {
+        "key_display": "sk-t5rnZF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "tudou": {
+      "tudou_gemini_default": {
+        "key_display": "sk-u1rpu1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "tuneng": {
+      "tuneng_test_gemini": {
+        "key_display": "sk-0tRV2V",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "TUNESPHERE": {
+      "test": {
+        "key_display": "sk-Twkxad",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "ts": {
+        "key_display": "sk-SV2p80",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TUNESPHERE_sora_default": {
+        "key_display": "sk-kEgvHv",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "TUNESPHERE_sora_default2": {
+        "key_display": "sk-jLqu3V",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "测试": {
+        "key_display": "sk-ifSGK3",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "tx-0130": {
+      "tx-lh-kv_claude_default": {
+        "key_display": "sk-a5dm1T",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0414": {
+      "xgky_default_aws": {
+        "key_display": "sk-BzulxI",
+        "total_cost": 0.1185,
+        "total_count": 35,
+        "details": {
+          "claude-haiku-4-5-20251001": {
+            "prompt_tokens": 1425,
+            "completion_tokens": 261,
+            "cost": 0.007984,
+            "count": 5,
+            "cache_creation_5m_tokens": 4201
+          },
+          "claude-opus-4-6": {
+            "prompt_tokens": 950,
+            "completion_tokens": 894,
+            "cost": 0.027104,
+            "count": 9
+          },
+          "claude-opus-4-7": {
+            "prompt_tokens": 2015,
+            "completion_tokens": 495,
+            "cost": 0.048718,
+            "count": 10,
+            "cache_creation_5m_tokens": 4202
+          },
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 3346,
+            "completion_tokens": 596,
+            "cost": 0.034744,
+            "count": 11,
+            "cache_creation_5m_tokens": 4202
+          }
+        }
+      },
+      "xgky_default_gemini": {
+        "key_display": "sk-36xTOn",
+        "total_cost": 0.0739,
+        "total_count": 76,
+        "details": {
+          "gemini-2.5-flash": {
+            "prompt_tokens": 1059,
+            "completion_tokens": 2603,
+            "cost": 0.006824,
+            "count": 15
+          },
+          "gemini-2.5-flash-lite": {
+            "prompt_tokens": 865,
+            "completion_tokens": 1294,
+            "cost": 0.000608,
+            "count": 14
+          },
+          "gemini-3-flash-preview": {
+            "prompt_tokens": 2608,
+            "completion_tokens": 3879,
+            "cost": 0.012952,
+            "count": 17
+          },
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 2663,
+            "completion_tokens": 1483,
+            "cost": 0.00289,
+            "count": 16
+          },
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 2445,
+            "completion_tokens": 3809,
+            "cost": 0.050598,
+            "count": 14
+          }
+        }
+      },
+      "xgky_default_gpt": {
+        "key_display": "sk-6hzXh5",
+        "total_cost": 0.0078,
+        "total_count": 34,
+        "details": {
+          "gpt-4o-mini": {
+            "prompt_tokens": 258,
+            "completion_tokens": 197,
+            "cost": 0.000158,
+            "count": 9
+          },
+          "gpt-4o": {
+            "prompt_tokens": 460,
+            "completion_tokens": 140,
+            "cost": 0.00255,
+            "count": 7
+          },
+          "gpt-5.4": {
+            "prompt_tokens": 256,
+            "completion_tokens": 186,
+            "cost": 0.003432,
+            "count": 8
+          },
+          "gpt-5.4-mini": {
+            "prompt_tokens": 563,
+            "completion_tokens": 277,
+            "cost": 0.00167,
+            "count": 10
+          }
+        }
+      }
+    },
+    "user0508": {
+      "user0508_cluadecode": {
+        "key_display": "sk-Ypjc0A",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "userjd": {
+      "userjd_test_aws": {
+        "key_display": "sk-62AUBX",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "userjd_test_gemini": {
+        "key_display": "sk-jcu1B2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "userjd_test_gpt": {
+        "key_display": "sk-lAEE9x",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "userv0319gpt": {
+      "GPT_V_0319": {
+        "key_display": "sk-arh64P",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "vclient": {
+      "vclient_claude_default": {
+        "key_display": "sk-vZTxFN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vclient_gemini_default": {
+        "key_display": "sk-CJRX2i",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "vimage0205": {
+      "image0205_geminivertex_default": {
+        "key_display": "sk-LEODfM",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "image0205_geminivertexorigin_default": {
+        "key_display": "sk-QkzRcs",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "vin_test": {
+      "vin_test_default_gemini": {
+        "key_display": "sk-v0HIni",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vin_test_default_gpt": {
+        "key_display": "sk-hhhPo5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "vincent": {
+      "vincent_anthropic": {
+        "key_display": "sk-e6BTJD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vincent_aws": {
+        "key_display": "sk-nCsOGO",
+        "total_cost": 0.0032,
+        "total_count": 12,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 96,
+            "completion_tokens": 192,
+            "cost": 0.003168,
+            "count": 12
+          }
+        }
+      },
+      "vincent_claudecode": {
+        "key_display": "sk-gs0krD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vincent_gemini": {
+        "key_display": "sk-hGaw7m",
+        "total_cost": 0.0274,
+        "total_count": 11,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 22,
+            "completion_tokens": 2277,
+            "cost": 0.027368,
+            "count": 11
+          }
+        }
+      },
+      "vincent_gpt": {
+        "key_display": "sk-KeyP2j",
+        "total_cost": 0.0022,
+        "total_count": 12,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 84,
+            "completion_tokens": 132,
+            "cost": 0.002184,
+            "count": 12
+          }
+        }
+      },
+      "vincent_gpt_image_web": {
+        "key_display": "sk-DnzNbT",
+        "total_cost": 0.6,
+        "total_count": 12,
+        "details": {
+          "gpt-image-2-web": {
+            "prompt_tokens": 96,
+            "completion_tokens": 108,
+            "cost": 0.6,
+            "count": 12
+          }
+        }
+      }
+    },
+    "vista": {
+      "developer": {
+        "key_display": "sk-Ph9SoE",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vista_claude_default": {
+        "key_display": "sk-eIFhKH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vista_gemini_default": {
+        "key_display": "sk-F4iuLL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "vista_gpt_default": {
+        "key_display": "sk-26OkuK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Vista麦": {
+      "claude_default": {
+        "key_display": "sk-7qVcca",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gemini_default": {
+        "key_display": "sk-2oaMwB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt_default": {
+        "key_display": "sk-LlDBnq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Vvip": {
+      "Vvip_anthropic_default": {
+        "key_display": "sk-kOqOTR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Vvip_aws_default": {
+        "key_display": "sk-igEotM",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Vvip_claudecode_default": {
+        "key_display": "sk-f6TTTN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "Vvip_gpt_default": {
+        "key_display": "sk-LwFvZV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "Vvvw": {
+      "Rainy-": {
+        "key_display": "sk-tlh1zz",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "waiqi-1": {
+      "waiqi-1_default_claude": {
+        "key_display": "sk-bVaMFl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "waiqi-1_default_gpt": {
+        "key_display": "sk-5fihvn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "waiqi1-gpt": {
+        "key_display": "sk-opSpHM",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "weipai_test": {
+      "weipai_default_aws": {
+        "key_display": "sk-9dhuBY",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "weipai_default_gemini": {
+        "key_display": "sk-qQz39Y",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "weipai_default_gpt": {
+        "key_display": "sk-Xy3aBU",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "WF": {
+      "WF_geminivertex_default": {
+        "key_display": "sk-b9tUjx",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "withgpt": {
+      "1": {
+        "key_display": "sk-L4HxC4",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "WSKJ": {
+      "user0401_default_claude": {
+        "key_display": "sk-Qy46Ch",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "user0401_default_gemini": {
+        "key_display": "sk-oJGiX5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "wyne": {
+      "wyne_test_claude": {
+        "key_display": "sk-tWPioW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "XGSC": {
+      "XGSC_aws": {
+        "key_display": "sk-H99PJq",
+        "total_cost": 0.0005,
+        "total_count": 2,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 12,
+            "completion_tokens": 10,
+            "cost": 0.000186,
+            "count": 1
+          },
+          "claude-opus-4-7": {
+            "prompt_tokens": 19,
+            "completion_tokens": 7,
+            "cost": 0.00027,
+            "count": 1
+          }
+        }
+      }
+    },
+    "Xianlong": {
+      "Xianlong_default": {
+        "key_display": "sk-Dv5ixf",
+        "total_cost": 12.0102,
+        "total_count": 1951,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 1395521,
+            "completion_tokens": 201263,
+            "cost": 12.01019,
+            "count": 1951
+          }
+        }
+      },
+      "xianlong_gemini_gpt": {
+        "key_display": "sk-VqMNTt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xianniukou": {
+      "西安纽扣_test_aws": {
+        "key_display": "sk-dTWRFl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "西安纽扣_test_gpt": {
+        "key_display": "sk-KOjT3P",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xiaojian": {
+      "xiaojian_aws": {
+        "key_display": "sk-F2hGt0",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xiaojian_gemini": {
+        "key_display": "sk-N6Clos",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xiaojian_gpt": {
+        "key_display": "sk-ZtPIkl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xiaojian_qianwen": {
+        "key_display": "sk-O5tkZ8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xiaosu": {
+      "xiaosu_gptazure": {
+        "key_display": "sk-4XsV4s",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xiaoyu": {
+      "test": {
+        "key_display": "sk-TmySQh",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xingqiwan": {
+      "xingqiwan_test_aws": {
+        "key_display": "sk-lX8vjn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xingqiwan_test_gemini": {
+        "key_display": "sk-fr3ELf",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xingqiwan_test_gpt": {
+        "key_display": "sk-hdhrV4",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xinhang": {
+      "xinhang_default_gemini": {
+        "key_display": "sk-W2wkol",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xiwang_test": {
+      "default_test_claude": {
+        "key_display": "sk-UhWVQF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "default_test_gemini": {
+        "key_display": "sk-bNPKlH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "default_test_gpt": {
+        "key_display": "sk-KuwFas",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xiwang_test_anthropic": {
+        "key_display": "sk-lJCPm7",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xixi": {
+      "xixi_claudecode_default": {
+        "key_display": "sk-wdxCjJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xmzhxk": {
+      "xmzhxk_claude_default": {
+        "key_display": "sk-Unqavl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xmzhxk_gemini_default": {
+        "key_display": "sk-fFJ24x",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "XSFY": {
+      "XSFY_claude_default": {
+        "key_display": "sk-YfghdB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "XSFY_claudecode_default": {
+        "key_display": "sk-PmTx8B",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "XSFY_gemini_default": {
+        "key_display": "sk-H3JfLN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "XSFY_geminivertex2_default": {
+        "key_display": "sk-MdNW1U",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "XSFY_gpt_default": {
+        "key_display": "sk-BDkXP8",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yaowangkeji": {
+      "yaowangkeji_aws": {
+        "key_display": "sk-U8htjX",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yaowangkeji_aws2-zibai": {
+        "key_display": "sk-5ZqEGB",
+        "total_cost": 286.6262,
+        "total_count": 1545,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 20700907,
+            "completion_tokens": 380845,
+            "cost": 188.349992,
+            "count": 1162,
+            "cache_hit_tokens": 78671621,
+            "cache_creation_5m_tokens": 5758121
+          },
+          "claude-opus-4-7": {
+            "prompt_tokens": 17751012,
+            "completion_tokens": 380837,
+            "cost": 98.276176,
+            "count": 383
+          }
+        }
+      },
+      "yaowangkeji_aws3-hantao": {
+        "key_display": "sk-Cplxc3",
+        "total_cost": 133.3098,
+        "total_count": 1578,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 238582,
+            "completion_tokens": 498794,
+            "cost": 133.309384,
+            "count": 1577,
+            "cache_hit_tokens": 121721834,
+            "cache_creation_5m_tokens": 9405685
+          },
+          "claude-haiku-4-5-20251001": {
+            "prompt_tokens": 377,
+            "completion_tokens": 15,
+            "cost": 0.000452,
+            "count": 1
+          }
+        }
+      },
+      "yaowangkeji_aws4-laoban": {
+        "key_display": "sk-SQIPNw",
+        "total_cost": 217.9244,
+        "total_count": 2056,
+        "details": {
+          "claude-haiku-4-5-20251001": {
+            "prompt_tokens": 342,
+            "completion_tokens": 14,
+            "cost": 0.000412,
+            "count": 1
+          },
+          "claude-opus-4-6": {
+            "prompt_tokens": 231802,
+            "completion_tokens": 542367,
+            "cost": 194.648622,
+            "count": 1722,
+            "cache_hit_tokens": 151453413,
+            "cache_creation_5m_tokens": 16672564
+          },
+          "claude-opus-4-7": {
+            "prompt_tokens": 17297,
+            "completion_tokens": 35913,
+            "cost": 5.425028,
+            "count": 66,
+            "cache_hit_tokens": 3226394,
+            "cache_creation_5m_tokens": 452402
+          },
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 677127,
+            "completion_tokens": 58876,
+            "cost": 17.850364,
+            "count": 267,
+            "cache_hit_tokens": 16834181,
+            "cache_creation_5m_tokens": 2636152
+          }
+        }
+      },
+      "yaowangkeji_aws5": {
+        "key_display": "sk-2OevSq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yaowangkeji_claudeaws": {
+        "key_display": "sk-KHRb79",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yaowangkeji_claudecode": {
+        "key_display": "sk-K1gcoT",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yaowangkeji_gemini": {
+        "key_display": "sk-TtFunj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yaowangkeji_gpt": {
+        "key_display": "sk-mhx8oK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yuanya": {
+      "yuanya_test_claude": {
+        "key_display": "sk-iZZVWH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanya_test_gemini": {
+        "key_display": "sk-WK2SNb",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanya_test_gpt": {
+        "key_display": "sk-WO7dUm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yuanyi": {
+      "yuanyi_0422_claude": {
+        "key_display": "sk-BWyJQG",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_claude_0409": {
+        "key_display": "sk-eGyp3D",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_claude_default": {
+        "key_display": "sk-mBhdhc",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_claude_default2": {
+        "key_display": "sk-KtHifl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_gpt_default": {
+        "key_display": "sk-qEt2Cq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_gptazure_default": {
+        "key_display": "sk-ldiEW4",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_gptazure_default1": {
+        "key_display": "sk-U9pwOe",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuanyi_gptopenai_default": {
+        "key_display": "sk-fAjvUL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yuecloud": {
+      "yuecloud_aws": {
+        "key_display": "sk-7siIVm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuecloud_gemini": {
+        "key_display": "sk-m1ZCFF",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuecloud_gpt": {
+        "key_display": "sk-0xhXpH",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuecloud_test_aws": {
+        "key_display": "sk-kFEI0C",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuecloud_test_gemini": {
+        "key_display": "sk-WVd5Gq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "yuecloud_test_gpt": {
+        "key_display": "sk-LBQVYj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yuegle": {
+      "yuegle_gemini": {
+        "key_display": "sk-QMFWZn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yunfeng": {
+      "yunfeng_geminivertex_default": {
+        "key_display": "sk-hxpMhl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "yunzong_test": {
+      "test_default_claude": {
+        "key_display": "sk-VkNByZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test_default_gemini": {
+        "key_display": "sk-W1HEPK",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test_default_gpt": {
+        "key_display": "sk-cMsS7q",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "ZettaNex": {
+      "ZettaNex_claudeaws_default": {
+        "key_display": "sk-lrgiKR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zhengtu": {
+      "dev": {
+        "key_display": "sk-YsFTF9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "WZF_openai_defautl": {
+        "key_display": "sk-SkdStX",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zhengtu_OpenAI_default": {
+        "key_display": "sk-gYfriQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zihan": {
+      "zihan_claudecode_default": {
+        "key_display": "sk-8dXEhj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zs-0130": {
+      "tbench专用azure": {
+        "key_display": "sk-NEb5Df",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zs-lh-kv_gpt_default": {
+        "key_display": "sk-fvT2jm",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zs-lh-kv_openai_default": {
+        "key_display": "sk-KFjvMg",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "北美主站专用-openai": {
+        "key_display": "sk-1UYY6i",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "北美主站专用-openaiazure": {
+        "key_display": "sk-7qpAVQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "南大专用": {
+        "key_display": "sk-LVjd6W",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zs-0203": {
+      "pp中国站cc专用": {
+        "key_display": "sk-ViF1Rj",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "test": {
+        "key_display": "sk-8373Te",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "testcc": {
+        "key_display": "sk-jjzMmJ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zs-0203_claudecode_default": {
+        "key_display": "sk-MoiHkM",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "刘铭cc": {
+        "key_display": "sk-lf8NpR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "北美主站cc专用": {
+        "key_display": "sk-cXfUna",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "南大 cc 专用": {
+        "key_display": "sk-WPqeWt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "唐啸cc": {
+        "key_display": "sk-YIJEHN",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "宗科cc": {
+        "key_display": "sk-3dYr7N",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zs-kev": {
+      "zs-kev_openai_default": {
+        "key_display": "sk-QWw6S2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zs-kv": {
+      "zs-kv_aws_default": {
+        "key_display": "sk-hPnhAq",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zs-kv_aws_default2": {
+        "key_display": "sk-ih4zIh",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "北美主站专用": {
+        "key_display": "sk-ZofQEd",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zxfc": {
+      "zxfc_geminivertex": {
+        "key_display": "sk-I1bc4l",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zxfc_gptazure": {
+        "key_display": "sk-TMIcsM",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "zyjzzx": {
+      "claude_cl": {
+        "key_display": "sk-vrcx6r",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude_wxx": {
+        "key_display": "sk-TtoQwg",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude_ydl": {
+        "key_display": "sk-abRqjL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zyjzzx_claude_default": {
+        "key_display": "sk-oqZcu6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "zyjzzx_gemini_default": {
+        "key_display": "sk-SoE7J2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "京瓷办公设备科技（东莞）有限公司": {
+      "DeepSeek v3.2": {
+        "key_display": "sk-EVwgeq",
+        "total_cost": 0.0382,
+        "total_count": 83,
+        "details": {
+          "deepseek-v3.2": {
+            "prompt_tokens": 66485,
+            "completion_tokens": 23281,
+            "cost": 0.038168,
+            "count": 83
+          }
+        }
+      }
+    },
+    "嘉丰永道": {
+      "jf_default_claude": {
+        "key_display": "sk-1RTycZ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jf_default_gemini": {
+        "key_display": "sk-Pzp6tV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "jf_default_gpt": {
+        "key_display": "sk-OrbrKD",
+        "total_cost": 11.3239,
+        "total_count": 444,
+        "details": {
+          "gpt-5.4": {
+            "prompt_tokens": 257631,
+            "completion_tokens": 68058,
+            "cost": 1.654496,
+            "count": 395,
+            "cache_hit_tokens": 4608
+          },
+          "gpt-image-2": {
+            "prompt_tokens": 35474,
+            "completion_tokens": 181104,
+            "cost": 5.716912,
+            "count": 33
+          },
+          "gpt-image-1": {
+            "prompt_tokens": 6836,
+            "completion_tokens": 97376,
+            "cost": 3.952488,
+            "count": 16
+          }
+        }
+      }
+    },
+    "引擎力": {
+      "引擎力_azure_default": {
+        "key_display": "sk-Pe3qlr",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "引擎力_claudecode_default": {
+        "key_display": "sk-oobEIn",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "引擎力_gemini_default": {
+        "key_display": "sk-EIT87F",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "老胖次": {
+      "0.18元 谷歌": {
+        "key_display": "sk-HNlufS",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    }
+  },
+  "newrouter": {
+    "glink": {
+      "glink_claudeaws": {
+        "key_display": "sk-7oddCg",
+        "total_cost": 36512.556,
+        "total_count": 124167,
+        "details": {
+          "claude-opus-4-6": {
+            "prompt_tokens": 1270110219,
+            "completion_tokens": 126068511,
+            "cost": 11848.274688,
+            "count": 52033,
+            "cache_hit_tokens": 135718859,
+            "cache_creation_5m_tokens": 363866029,
+            "cache_creation_1h_tokens": 1062505
+          },
+          "claude-opus-4-7": {
+            "prompt_tokens": 3849832843,
+            "completion_tokens": 39908258,
+            "cost": 24664.281344,
+            "count": 72134,
+            "cache_hit_tokens": 1310317466,
+            "cache_creation_5m_tokens": 600347897,
+            "cache_creation_1h_tokens": 1010483
+          }
+        }
+      },
+      "glink_gemini": {
+        "key_display": "sk-M8tL9s",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0323": {
+      "user0323_claudeaws": {
+        "key_display": "sk-hucvOa",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xinghe": {
+      "xinghe_claudeaws": {
+        "key_display": "sk-ppsCY5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe_claudecode": {
+        "key_display": "sk-WXkJDf",
+        "total_cost": 1.4437,
+        "total_count": 26,
+        "details": {
+          "claude-sonnet-4-5-20250929": {
+            "prompt_tokens": 54325,
+            "completion_tokens": 26642,
+            "cost": 1.44368,
+            "count": 26,
+            "cache_hit_tokens": 977439,
+            "cache_creation_5m_tokens": 156765
+          }
+        }
+      },
+      "xinghe_gemini": {
+        "key_display": "sk-XTfq3X",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe_geminiimage": {
+        "key_display": "sk-P2WQZ1",
+        "total_cost": 2537.5435,
+        "total_count": 39288,
+        "details": {
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 20276124,
+            "completion_tokens": 29454890,
+            "cost": 1452.090618,
+            "count": 25475,
+            "cache_hit_tokens": 490831,
+            "image_output_tokens": 23747039
+          },
+          "gemini-2.5-flash-image": {
+            "prompt_tokens": 767004,
+            "completion_tokens": 1733101,
+            "cost": 51.814094,
+            "count": 1879
+          },
+          "gemini-3-pro-image-preview": {
+            "prompt_tokens": 5367341,
+            "completion_tokens": 12178573,
+            "cost": 1033.638838,
+            "count": 11934,
+            "cache_hit_tokens": 139,
+            "image_output_tokens": 8118160
+          }
+        }
+      },
+      "xinghe_gptazure": {
+        "key_display": "sk-Kg4I7m",
+        "total_cost": 0.3244,
+        "total_count": 102,
+        "details": {
+          "gpt-4.1": {
+            "prompt_tokens": 46935,
+            "completion_tokens": 1686,
+            "cost": 0.107358,
+            "count": 68
+          },
+          "gpt-4o-mini": {
+            "prompt_tokens": 1380020,
+            "completion_tokens": 17465,
+            "cost": 0.217008,
+            "count": 34,
+            "cache_hit_tokens": 6912
+          }
+        }
+      },
+      "xinghe_grok": {
+        "key_display": "sk-pTRdIL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe_grokimagine": {
+        "key_display": "sk-u0otPw",
+        "total_cost": 115.22,
+        "total_count": 1094,
+        "details": {
+          "grok-imagine-image": {
+            "prompt_tokens": 1099,
+            "completion_tokens": 0,
+            "cost": 21.98,
+            "count": 873
+          },
+          "grok-imagine-video": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost": 93.24,
+            "count": 221
+          }
+        }
+      },
+      "xinghe_soraazure": {
+        "key_display": "sk-aZ2Cot",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "xinghe2": {
+      "xinghe2 claudeaws": {
+        "key_display": "sk-5snjDl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe2 gemini": {
+        "key_display": "sk-KoVcvG",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe2_claudecode": {
+        "key_display": "sk-OI1EZw",
+        "total_cost": 0.0007,
+        "total_count": 3,
+        "details": {
+          "claude-sonnet-4-5": {
+            "prompt_tokens": 10,
+            "completion_tokens": 11,
+            "cost": 0.000194,
+            "count": 1
+          },
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 10,
+            "completion_tokens": 11,
+            "cost": 0.000194,
+            "count": 1
+          },
+          "claude-opus-4-5-20251101": {
+            "prompt_tokens": 10,
+            "completion_tokens": 11,
+            "cost": 0.000324,
+            "count": 1
+          }
+        }
+      },
+      "xinghe2_geminiimage": {
+        "key_display": "sk-DNV8MG",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe2_gptazure": {
+        "key_display": "sk-Ag8oZI",
+        "total_cost": 0.0004,
+        "total_count": 11,
+        "details": {
+          "gpt-4o-mini": {
+            "prompt_tokens": 40,
+            "completion_tokens": 50,
+            "cost": 3.8e-05,
+            "count": 5
+          },
+          "gpt-4.1": {
+            "prompt_tokens": 32,
+            "completion_tokens": 42,
+            "cost": 0.0004,
+            "count": 4
+          },
+          "gpt-4.1-nano": {
+            "prompt_tokens": 16,
+            "completion_tokens": 20,
+            "cost": 8e-06,
+            "count": 2
+          }
+        }
+      },
+      "xinghe2_grok": {
+        "key_display": "sk-6bIEVW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe2_grokimagine": {
+        "key_display": "sk-1CWxWB",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "xinghe2_soraazure": {
+        "key_display": "sk-mCR4k5",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    }
+  },
+  "aws-openrouter": {
+    "7client": {
+      "7client_awschannel1": {
+        "key_display": "sk-p9aqFR",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "7client_awschannel2": {
+        "key_display": "sk-6Tfkxt",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "mixai": {
+      "claudecode": {
+        "key_display": "sk-2NIWMW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gemini": {
+        "key_display": "sk-8zBn1Q",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt_azure": {
+        "key_display": "sk-zRY9lu",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "oupai-pp": {
+      "oupai-pp_claudeaws": {
+        "key_display": "sk-4peLOo",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "testuser": {
+      "claude aws": {
+        "key_display": "sk-aZkXD2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "claude_default": {
+        "key_display": "sk-92Yi0l",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gemini_default": {
+        "key_display": "sk-MqmXju",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "gpt_default": {
+        "key_display": "sk-cHsgN9",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "testWang-qianduan": {
+      "1": {
+        "key_display": "sk-6X1frz",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "2": {
+        "key_display": "sk-IEh3c1",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0131": {
+      "user0131_aws_default": {
+        "key_display": "sk-Ms4JeD",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0311cc": {
+      "user0311cc": {
+        "key_display": "sk-azSmYQ",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0312sonnet": {
+      "user0312sonnet_claudeaws": {
+        "key_display": "sk-DUPfFe",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0317": {
+      "user_0317_claude": {
+        "key_display": "sk-C6uoGy",
+        "total_cost": 29.3375,
+        "total_count": 406,
+        "details": {
+          "claude-sonnet-4-6": {
+            "prompt_tokens": 106,
+            "completion_tokens": 9271,
+            "cost": 0.802344,
+            "count": 20,
+            "cache_hit_tokens": 207449,
+            "cache_creation_5m_tokens": 160193
+          },
+          "claude-haiku-4-5-20251001": {
+            "prompt_tokens": 30823,
+            "completion_tokens": 54190,
+            "cost": 1.804338,
+            "count": 124,
+            "cache_hit_tokens": 5255248,
+            "cache_creation_5m_tokens": 781613
+          },
+          "claude-opus-4-5-20251101": {
+            "prompt_tokens": 237283,
+            "completion_tokens": 129669,
+            "cost": 26.525732,
+            "count": 257,
+            "cache_hit_tokens": 21620433,
+            "cache_creation_5m_tokens": 1805976
+          },
+          "claude-sonnet-4-5-20250929": {
+            "prompt_tokens": 53,
+            "completion_tokens": 3402,
+            "cost": 0.205074,
+            "count": 5,
+            "cache_hit_tokens": 106706,
+            "cache_creation_5m_tokens": 32499
+          }
+        }
+      }
+    },
+    "user0325": {
+      "user0325_claudeaws": {
+        "key_display": "sk-mF7YGT",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0330": {
+      "user0330_claudeanthropic": {
+        "key_display": "sk-dbhhdl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0331": {
+      "user0331_claudeanthropic": {
+        "key_display": "sk-FY3uw6",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0402": {
+      "user0402_claudeanthropic": {
+        "key_display": "sk-6Uytpl",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "user0402_claudeaws": {
+        "key_display": "sk-CX0hd2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "user0423": {
+      "user0423-azure-claude": {
+        "key_display": "sk-1FFcXW",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "user0423-gcp-claude": {
+        "key_display": "sk-wGwjdL",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "user0423-openrouter-anthropic": {
+        "key_display": "sk-Qv60Ja",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      },
+      "user0423-openrouter-aws": {
+        "key_display": "sk-LzjP5D",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    }
+  },
+  "gemini-openrouter": {
+    "crescendia": {
+      "crescendia_gemini": {
+        "key_display": "sk-s4xDxV",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "geminiuser0304": {
+      "gemini-aistudio": {
+        "key_display": "sk-Gvj1eu",
+        "total_cost": 633.7393,
+        "total_count": 24516,
+        "details": {
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 75614119,
+            "completion_tokens": 2520411,
+            "cost": 20.508066,
+            "count": 14846,
+            "cache_hit_tokens": 9680679
+          },
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 213286124,
+            "completion_tokens": 27075543,
+            "cost": 467.246126,
+            "count": 8604,
+            "cache_hit_tokens": 157939133
+          },
+          "gemini-2.5-pro": {
+            "prompt_tokens": 3009114,
+            "completion_tokens": 1293496,
+            "cost": 16.304854,
+            "count": 185,
+            "cache_hit_tokens": 348016
+          },
+          "gemini-3-pro-image-preview": {
+            "prompt_tokens": 527548,
+            "completion_tokens": 1383743,
+            "cost": 129.660332,
+            "count": 837,
+            "cache_hit_tokens": 1795,
+            "image_output_tokens": 1037040
+          },
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 24010,
+            "completion_tokens": 2622,
+            "cost": 0.01988,
+            "count": 44
+          }
+        }
+      },
+      "geminiuser0304": {
+        "key_display": "sk-ogamBe",
+        "total_cost": 9818.9108,
+        "total_count": 492297,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 2491747532,
+            "completion_tokens": 305060677,
+            "cost": 5440.656044,
+            "count": 106368,
+            "cache_hit_tokens": 1779934643
+          },
+          "gemini-3-flash-preview": {
+            "prompt_tokens": 1397562290,
+            "completion_tokens": 188923210,
+            "cost": 1067.644678,
+            "count": 207051,
+            "cache_hit_tokens": 439881463
+          },
+          "gemini-3.1-flash-lite-preview": {
+            "prompt_tokens": 632943759,
+            "completion_tokens": 21378398,
+            "cost": 167.262084,
+            "count": 154240,
+            "cache_hit_tokens": 102499067
+          },
+          "gemini-2.5-flash": {
+            "prompt_tokens": 6560844,
+            "completion_tokens": 8273510,
+            "cost": 22.609748,
+            "count": 2138,
+            "cache_hit_tokens": 157002
+          },
+          "gemini-2.5-flash-image": {
+            "prompt_tokens": 1464456,
+            "completion_tokens": 3238074,
+            "cost": 97.577022,
+            "count": 2776
+          },
+          "gemini-2.5-pro": {
+            "prompt_tokens": 28985441,
+            "completion_tokens": 13048686,
+            "cost": 159.515882,
+            "count": 1872,
+            "cache_hit_tokens": 6402684
+          },
+          "gemini-3-pro-image-preview": {
+            "prompt_tokens": 9791436,
+            "completion_tokens": 30065527,
+            "cost": 2862.589356,
+            "count": 17389,
+            "cache_hit_tokens": 52967,
+            "image_output_tokens": 22983520
+          },
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 249370,
+            "completion_tokens": 44390,
+            "cost": 1.055966,
+            "count": 463,
+            "image_output_tokens": 14000
+          }
+        }
+      }
+    },
+    "geminivchuer": {
+      "geminiv0302": {
+        "key_display": "sk-Sb9aJu",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    },
+    "gptuser0324": {
+      "gptuser0324_default": {
+        "key_display": "sk-TyUes3",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    }
+  },
+  "banana-openrouter": {
+    "geminivchuer": {
+      "geminiv_image": {
+        "key_display": "sk-5QT70E",
+        "total_cost": 1977.2709,
+        "total_count": 12959,
+        "details": {
+          "gemini-3-pro-image-preview": {
+            "prompt_tokens": 13226898,
+            "completion_tokens": 19654338,
+            "cost": 1955.884092,
+            "count": 12723,
+            "image_output_tokens": 15681280
+          },
+          "gemini-3.1-flash-image-preview": {
+            "prompt_tokens": 1405257,
+            "completion_tokens": 728831,
+            "cost": 21.386828,
+            "count": 236,
+            "image_output_tokens": 324520
+          }
+        }
+      }
+    },
+    "sc800746": {
+      "sc-800746": {
+        "key_display": "sk-J5yPS2",
+        "total_cost": 0,
+        "total_count": 0,
+        "details": {}
+      }
+    }
+  },
+  "tongcheng": {
+    "user": {
+      "user_default": {
+        "key_display": "sk-ly0pau",
+        "total_cost": 0.4919,
+        "total_count": 10,
+        "details": {
+          "gemini-3.1-pro-preview": {
+            "prompt_tokens": 93447,
+            "completion_tokens": 25413,
+            "cost": 0.49185,
+            "count": 10
+          }
+        }
+      }
+    }
+  }
+}

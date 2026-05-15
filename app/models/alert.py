@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
-from sqlalchemy import String, Integer, Text, DECIMAL, Boolean, ForeignKey, Index, func
+from sqlalchemy import String, Integer, Text, DECIMAL, Boolean, ForeignKey, Index, func, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -22,6 +22,9 @@ class AlertRule(Base):
     notify_webhook: Mapped[str | None] = mapped_column(Text)
     notify_email: Mapped[str | None] = mapped_column(String(500))  # comma-separated emails
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 自定义时间段字段（用于 custom_period_budget_multi 类型）
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # relationships
