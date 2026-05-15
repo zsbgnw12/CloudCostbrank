@@ -16,7 +16,7 @@ class AlertRule(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     target_type: Mapped[str] = mapped_column(String(20), nullable=False)  # project/category/provider
-    target_id: Mapped[str | None] = mapped_column(String(200))  # NULL = global
+    target_id: Mapped[str | None] = mapped_column(Text)  # NULL = global; comma-separated UUIDs for project_group
     threshold_type: Mapped[str] = mapped_column(String(30), nullable=False)  # daily_absolute/daily_increase_pct/monthly_budget/monthly_minimum_commitment
     threshold_value: Mapped[Decimal] = mapped_column(DECIMAL(14, 2), nullable=False)
     notify_webhook: Mapped[str | None] = mapped_column(Text)
