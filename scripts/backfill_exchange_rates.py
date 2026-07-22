@@ -22,7 +22,7 @@ from _db import connect  # noqa: E402
 def fetch_range(start_iso: str, end_iso: str) -> dict[str, Decimal]:
     """frankfurter range 端点一次返回区间内所有工作日的 USD→CNY。"""
     url = f"https://api.frankfurter.app/{start_iso}..{end_iso}"
-    with httpx.Client(timeout=60) as client:
+    with httpx.Client(timeout=60, follow_redirects=True) as client:
         resp = client.get(url, params={"from": "USD", "to": "CNY"})
         resp.raise_for_status()
         data = resp.json()

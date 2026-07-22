@@ -57,7 +57,7 @@ def fetch_usd_cny(date_iso: str) -> Decimal | None:
 
     url = f"https://api.frankfurter.app/{date_iso}"
     try:
-        with httpx.Client(timeout=15) as client:
+        with httpx.Client(timeout=15, follow_redirects=True) as client:
             resp = client.get(url, params={"from": "USD", "to": "CNY"})
             resp.raise_for_status()
             data = resp.json()

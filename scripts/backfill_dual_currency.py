@@ -68,12 +68,11 @@ def main():
             (first, nxt),
         )
         cur.execute(
-            "UPDATE billing_summary b SET cost_cny = b.cost_usd * er.rate "
-            "FROM LATERAL ("
-            "  SELECT rate FROM exchange_rates e "
+            "UPDATE billing_summary b SET cost_cny = b.cost_usd * ("
+            "  SELECT e.rate FROM exchange_rates e "
             "  WHERE e.from_currency='USD' AND e.to_currency='CNY' AND e.date <= b.date "
             "  ORDER BY e.date DESC LIMIT 1"
-            ") er "
+            ") "
             "WHERE b.date >= %s AND b.date < %s AND b.cost_cny IS NULL AND b.cost_usd IS NOT NULL",
             (first, nxt),
         )
