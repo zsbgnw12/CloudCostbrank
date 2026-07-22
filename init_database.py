@@ -1,9 +1,21 @@
 """Create cloudcost database and tables, clean up gongdan."""
+import os
+import sys
+
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
-GONGDAN_URL = "postgresql://azuredb:h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W@dataope.postgres.database.azure.com:5432/gongdan"
-CLOUDCOST_URL = "postgresql://azuredb:h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W@dataope.postgres.database.azure.com:5432/cloudcost"
+# 连接串从环境变量读取,禁止硬编码凭据。CLOUDCOST 用 SYNC_DATABASE_URL(去掉方言后缀),
+# GONGDAN 由同实例换库名派生。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_raw = os.environ.get("SYNC_DATABASE_URL")
+if not _raw:
+    from app.config import settings
+    _raw = settings.SYNC_DATABASE_URL
+if not _raw or "user:password@localhost" in _raw:
+    raise SystemExit("请设置环境变量 SYNC_DATABASE_URL(禁止硬编码数据库凭据)。")
+CLOUDCOST_URL = _raw.replace("postgresql+psycopg2://", "postgresql://")
+GONGDAN_URL = CLOUDCOST_URL.rsplit("/", 1)[0] + "/gongdan"
 
 # Step 1: Create cloudcost database
 print("=== Step 1: Create cloudcost database ===")
@@ -39,13 +51,11 @@ print("  gongdan cleanup done!")
 
 # Step 3: Create tables in cloudcost
 print("\n=== Step 3: Create tables in cloudcost ===")
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__))
 from sqlalchemy import create_engine, text
 from app.database import Base
 import app.models  # noqa
 
-engine = create_engine("postgresql+psycopg2://azuredb:h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W@dataope.postgres.database.azure.com:5432/cloudcost")
+engine = create_engine(_raw)
 Base.metadata.create_all(engine)
 
 with engine.connect() as c:

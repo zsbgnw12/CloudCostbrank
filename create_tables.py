@@ -10,8 +10,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from sqlalchemy import create_engine, text
 
-# 同步连接串
-DB_URL = "postgresql+psycopg2://azuredb:h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W@dataope.postgres.database.azure.com:5432/cloudcost"
+# 同步连接串 —— 从环境变量读取,禁止硬编码凭据。优先 SYNC_DATABASE_URL,回退 app 配置(.env)。
+DB_URL = os.environ.get("SYNC_DATABASE_URL")
+if not DB_URL:
+    from app.config import settings
+    DB_URL = settings.SYNC_DATABASE_URL
+if not DB_URL or "user:password@localhost" in DB_URL:
+    raise SystemExit("请设置环境变量 SYNC_DATABASE_URL(禁止硬编码数据库凭据)。")
 
 
 def main():

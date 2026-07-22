@@ -5,7 +5,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 c = psycopg2.connect(host="dataope.postgres.database.azure.com", port=5432, user="azuredb",
-                     password="h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W", dbname="cloudcost",
+                     password=__import__("os").environ.get("CC_DB_PASSWORD",""), dbname="cloudcost",
                      sslmode="require", connect_timeout=15)
 c.set_session(readonly=True); cur = c.cursor()
 

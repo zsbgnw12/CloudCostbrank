@@ -13,7 +13,7 @@ from google.oauth2 import service_account
 CSV_BATCH_TS = '2026-04-15 18:51:09.991957'  # exact CSV-import timestamp
 
 c = psycopg2.connect(host="dataope.postgres.database.azure.com", port=5432, user="azuredb",
-                     password="h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W", dbname="cloudcost",
+                     password=__import__("os").environ.get("CC_DB_PASSWORD",""), dbname="cloudcost",
                      sslmode="require", connect_timeout=60)
 c.set_session(readonly=True); cur = c.cursor()
 def sep(t): print("\n" + "="*80 + "\n  " + t + "\n" + "="*80)

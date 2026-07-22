@@ -16,7 +16,7 @@ creds = service_account.Credentials.from_service_account_info(
 bq = bigquery.Client(credentials=creds, project=creds.project_id)
 
 c = psycopg2.connect(host="dataope.postgres.database.azure.com", port=5432, user="azuredb",
-                     password="h13nYoFJX6QrfLzB8bdipEUCjsZq2P7W", dbname="cloudcost",
+                     password=__import__("os").environ.get("CC_DB_PASSWORD",""), dbname="cloudcost",
                      sslmode="require", connect_timeout=60)
 c.set_session(readonly=True); cur = c.cursor()
 

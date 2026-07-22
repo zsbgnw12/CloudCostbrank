@@ -7,12 +7,19 @@ from alembic import context
 
 # Import all models so metadata is populated
 from app.database import Base
+from app.config import settings
 import app.models  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# 安全:真实连接串从 settings.SYNC_DATABASE_URL(.env / 环境变量)注入,
+# 不从 alembic.ini 读明文生产密码(ini 里只是 localhost 占位符)。
+_env_url = settings.SYNC_DATABASE_URL
+if _env_url and "user:password@localhost" not in _env_url:
+    config.set_main_option("sqlalchemy.url", _env_url)
 
 target_metadata = Base.metadata
 
