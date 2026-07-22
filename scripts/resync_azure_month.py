@@ -43,7 +43,7 @@ def main():
     for s in sources:
         dsid = s["data_source_id"]
         try:
-            r = _run_sync_core(dsid, start_date, end_date)
+            r = _run_sync_core(dsid, start_date, end_date, replace=True)
             ok += 1
             print(f"  [OK] DS#{dsid} fetched={r['fetched']} upserted={r['upserted']}")
         except Exception as e:

@@ -132,18 +132,36 @@ _BILLING_COLUMNS = [
 ]
 
 
-def upsert_billing_rows(rows: list[dict]):
+def upsert_billing_rows(rows: list[dict], *, replace_scope: tuple[int, str, str] | None = None):
     """Bulk upsert using COPY + temp table merge (50x faster than executemany).
 
     入库前给每行固化 cost_usd / cost_cny 双币(见 currency_service),
     聚合时随 cost 一起 SUM,保证 dashboard/bill/alert 永不混币相加。
+
+    replace_scope=(data_source_id, start_date, end_date):若给定,在**同一事务**内
+    先 DELETE 该货源该日期区间的所有旧行再插入 —— "先删后插"保证:
+      · 改了 product 映射(如空值回退)后不会留下键不同的孤儿旧行 → 杜绝重复计数;
+      · 该区间以本次采集为唯一真相。
+    仅供整月/显式区间重同步使用;每日滚动同步不传,走纯覆盖 upsert 更安全
+    (避免上游偶发空返回时误删好数据)。
     """
-    if not rows:
+    if not rows and replace_scope is None:
         return 0
 
     engine = _get_sync_engine()
 
     with engine.begin() as conn:
+        if replace_scope is not None:
+            ds_id, sd, ed = replace_scope
+            res = conn.execute(text(
+                "DELETE FROM billing_summary WHERE data_source_id=:ds AND date>=:sd AND date<=:ed"
+            ), {"ds": ds_id, "sd": sd, "ed": ed})
+            logger.info("replace_scope: deleted %s old rows for ds=%s %s~%s",
+                        res.rowcount, ds_id, sd, ed)
+
+        if not rows:
+            return 0
+
         # 先按当日汇率固化双币,再构建 COPY 缓冲(此时行里已带 cost_usd/cost_cny)
         annotate_rows_with_dual_currency(conn, rows)
 

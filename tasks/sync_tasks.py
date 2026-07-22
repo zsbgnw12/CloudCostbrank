@@ -31,8 +31,12 @@ def _month_to_date_range(start_month: str, end_month: str | None = None):
     return start_date, end_date
 
 
-def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *, celery_task_id: str | None = None):
+def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *,
+                   celery_task_id: str | None = None, replace: bool = False):
     """Core sync logic — invoked by both month-range and date-range tasks.
+
+    replace=True:整月/显式区间重同步走"先删后插"(清该货源该区间旧行再插),
+    自动清除改了 product 映射后残留的孤儿行、杜绝重复计数。每日滚动同步用 False。
 
     Returns a result dict on success; raises on failure (caller wraps with retry).
     """
@@ -106,7 +110,8 @@ def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *, celer
                 elif v in ("", {}):
                     row[f] = None
 
-        upserted = upsert_billing_rows(rows)
+        replace_scope = (data_source_id, start_date, end_date) if replace else None
+        upserted = upsert_billing_rows(rows, replace_scope=replace_scope)
 
         if provider == "gcp":
             try:
@@ -154,10 +159,11 @@ def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *, celer
 
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=1800, time_limit=2400)
 def sync_data_source(self, data_source_id: int, start_month: str, end_month: str | None = None):
-    """Sync a single data source by MONTH range (legacy API kept for /api/sync/{id})."""
+    """Sync a single data source by MONTH range (手动/整月重同步:走先删后插)。"""
     start_date, end_date = _month_to_date_range(start_month, end_month)
     try:
-        return _run_sync_core(data_source_id, start_date, end_date, celery_task_id=self.request.id)
+        return _run_sync_core(data_source_id, start_date, end_date,
+                              celery_task_id=self.request.id, replace=True)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
