@@ -19,11 +19,18 @@ cryptography==44.0.3
 # Cloud SDKs
 boto3==1.38.5
 google-cloud-bigquery==3.31.0
+# Azure SDK 全部锁定确切版本 —— azure.* 是命名空间包,用 >= 会让容器构建拉到
+# 新发布的不兼容组合,导致 `azure.mgmt.resource` 命名空间损坏
+# (ImportError: cannot import name 'ResourceManagementClient' ... unknown location),
+# 使 api 容器启动即崩、流量回落旧版。以下为本地验证可用的一整套版本,勿改成 >=。
+azure-core==1.39.0
+azure-common==1.1.28
+azure-mgmt-core==1.6.0
 azure-identity==1.21.0
 azure-mgmt-costmanagement==4.0.1
-azure-mgmt-cognitiveservices>=14.0.0
-azure-mgmt-resource>=23.0.0
-azure-mgmt-subscription>=3.1.0
+azure-mgmt-cognitiveservices==14.1.0
+azure-mgmt-resource==25.0.0
+azure-mgmt-subscription==3.1.1
 PyJWT>=2.8.0
 
 # Utilities
