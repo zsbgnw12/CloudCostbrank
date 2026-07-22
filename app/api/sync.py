@@ -54,6 +54,21 @@ async def last_sync(
         return {"last_sync": None}
 
 
+@router.get("/health")
+async def sync_health(
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """货源同步健康:每个货源的状态 + 归类后的失败原因/修复建议 + 顶部汇总计数。
+
+    数据范围:admin/ops 看全部;cloud_<provider> 只看自己 provider 的货源。
+    """
+    from app.services.sync_health import compute_sync_health
+
+    visible = None if has_full_access(principal) else await visible_data_source_ids(db, principal)
+    return await compute_sync_health(db, visible)
+
+
 @router.post("/all")
 async def sync_all(
     body: SyncRequest,
