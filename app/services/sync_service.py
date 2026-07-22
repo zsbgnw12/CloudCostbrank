@@ -15,6 +15,7 @@ from app.models.supply_source import SupplySource
 from app.models.sync_log import SyncLog
 from app.models.billing_raw_taiji import BillingRawTaiji
 from app.services.crypto_service import decrypt_to_dict
+from app.services.currency_service import annotate_rows_with_dual_currency
 from app.services.default_supply_sources import (
     ensure_other_gcp_supply_source_id_sync,
     ensure_other_taiji_supply_source_id_sync,
@@ -126,25 +127,34 @@ _BILLING_COLUMNS = [
     "transaction_type", "seller_name",
     "consumption_model_id", "consumption_model_description",
     "tags", "system_labels", "additional_info",
+    # 双币规范化金额(采集时固化)。追加在末尾以保持 COPY / SELECT 列序一致。
+    "cost_usd", "cost_cny",
 ]
 
 
 def upsert_billing_rows(rows: list[dict]):
-    """Bulk upsert using COPY + temp table merge (50x faster than executemany)."""
+    """Bulk upsert using COPY + temp table merge (50x faster than executemany).
+
+    入库前给每行固化 cost_usd / cost_cny 双币(见 currency_service),
+    聚合时随 cost 一起 SUM,保证 dashboard/bill/alert 永不混币相加。
+    """
     if not rows:
         return 0
 
     engine = _get_sync_engine()
 
-    buf = io.StringIO()
-    for row in rows:
-        line = "\t".join(_escape_copy_value(row.get(c)) for c in _BILLING_COLUMNS)
-        buf.write(line + "\n")
-    buf.seek(0)
-
-    cols_str = ", ".join(_BILLING_COLUMNS)
-
     with engine.begin() as conn:
+        # 先按当日汇率固化双币,再构建 COPY 缓冲(此时行里已带 cost_usd/cost_cny)
+        annotate_rows_with_dual_currency(conn, rows)
+
+        buf = io.StringIO()
+        for row in rows:
+            line = "\t".join(_escape_copy_value(row.get(c)) for c in _BILLING_COLUMNS)
+            buf.write(line + "\n")
+        buf.seek(0)
+
+        cols_str = ", ".join(_BILLING_COLUMNS)
+
         raw = conn.connection.dbapi_connection
         cur = raw.cursor()
         try:
@@ -169,7 +179,8 @@ def upsert_billing_rows(rows: list[dict]):
                     seller_name VARCHAR(200),
                     consumption_model_id VARCHAR(40),
                     consumption_model_description VARCHAR(200),
-                    tags JSONB, system_labels JSONB, additional_info JSONB
+                    tags JSONB, system_labels JSONB, additional_info JSONB,
+                    cost_usd DECIMAL(20,6), cost_cny DECIMAL(20,6)
                 ) ON COMMIT DROP
             """)
 
@@ -214,7 +225,9 @@ def upsert_billing_rows(rows: list[dict]):
                     MAX(consumption_model_description) AS consumption_model_description,
                     (ARRAY_AGG(tags ORDER BY cost DESC))[1] AS tags,
                     (ARRAY_AGG(system_labels ORDER BY cost DESC NULLS LAST))[1] AS system_labels,
-                    (ARRAY_AGG(additional_info ORDER BY cost DESC))[1] AS additional_info
+                    (ARRAY_AGG(additional_info ORDER BY cost DESC))[1] AS additional_info,
+                    SUM(cost_usd) AS cost_usd,
+                    SUM(cost_cny) AS cost_cny
                 FROM _billing_staging
                 GROUP BY date, provider, data_source_id, project_id, product, usage_type, region, COALESCE(cost_type, 'regular')
                 ON CONFLICT (date, data_source_id, project_id, product, usage_type, region, cost_type)
@@ -238,7 +251,9 @@ def upsert_billing_rows(rows: list[dict]):
                     consumption_model_description = EXCLUDED.consumption_model_description,
                     tags = EXCLUDED.tags,
                     system_labels = EXCLUDED.system_labels,
-                    additional_info = EXCLUDED.additional_info
+                    additional_info = EXCLUDED.additional_info,
+                    cost_usd = EXCLUDED.cost_usd,
+                    cost_cny = EXCLUDED.cost_cny
             """)
 
             logger.info("Merged %d rows into billing_summary", len(rows))
@@ -258,11 +273,14 @@ def refresh_daily_summary(start_date: str, end_date: str):
         conn.execute(text("""
             INSERT INTO billing_daily_summary
                 (date, provider, data_source_id, project_id, product,
-                 total_cost, total_cost_at_list, total_credits,
+                 total_cost, total_cost_usd, total_cost_cny,
+                 total_cost_at_list, total_credits,
                  total_usage, record_count)
             SELECT
                 date, provider, data_source_id, project_id, product,
                 SUM(cost),
+                SUM(COALESCE(cost_usd, cost)),
+                SUM(cost_cny),
                 SUM(cost_at_list),
                 SUM(credits_total),
                 SUM(usage_quantity),

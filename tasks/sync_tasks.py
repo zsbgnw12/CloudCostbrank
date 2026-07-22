@@ -224,6 +224,28 @@ def check_alerts():
 
 
 @celery_app.task
+def sync_exchange_rate(days_back: int = 5):
+    """每日拉取最近几天 USD→CNY 汇率入库(ECB 周末/节假日无数据,回看几天补齐)。
+
+    双币入库(currency_service)依赖这张表把 USD-native 的云换算成 CNY。
+    """
+    from app.services.currency_service import fetch_usd_cny, store_usd_cny_rate
+    from app.services.sync_service import _get_sync_engine
+
+    engine = _get_sync_engine()
+    stored = 0
+    with engine.begin() as conn:
+        for i in range(max(days_back, 1)):
+            d = dt.date.today() - dt.timedelta(days=i)
+            rate = fetch_usd_cny(d.isoformat())
+            if rate:
+                store_usd_cny_rate(conn, d, rate)
+                stored += 1
+    logger.info("sync_exchange_rate stored %d USD→CNY rate(s)", stored)
+    return {"stored": stored}
+
+
+@celery_app.task
 def gc_taiji_raw_logs():
     """每日清理 30 天前的 taiji 原始请求日志；天级聚合（billing_data / token_usage）不动。"""
     from app.services.sync_service import gc_taiji_raw_older_than

@@ -25,11 +25,14 @@ async def generate_bills(db: AsyncSession, month: str) -> int:
     start = dt.date(year, mon, 1)
     end = dt.date(year + (1 if mon == 12 else 0), (mon % 12) + 1, 1)
 
+    # 账单基数用 cost_usd(内部统一口径,永不混币)。老行未回填时 COALESCE 回退 cost
+    # (现存全 USD,安全)。注:monthly_bills 暂无 currency 列,出账仍以 USD 计;
+    # 若要按客户币种(CNY)出账,需给 monthly_bills 加 currency 列 + 用 cost_cny,属后续增强。
     stmt = (
         select(
             DataSource.category_id,
             BillingData.provider,
-            func.sum(BillingData.cost).label("original_cost"),
+            func.sum(func.coalesce(BillingData.cost_usd, BillingData.cost)).label("original_cost"),
             Category.markup_rate,
         )
         .join(DataSource, BillingData.data_source_id == DataSource.id)

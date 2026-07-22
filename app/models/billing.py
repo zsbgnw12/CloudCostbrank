@@ -49,6 +49,12 @@ class BillingData(Base):
     usage_type: Mapped[str | None] = mapped_column(String(300))
     region: Mapped[str | None] = mapped_column(String(50))
     cost: Mapped[Decimal] = mapped_column(DECIMAL(20, 6), nullable=False)
+    # 双币规范化金额（采集时固化，见 app/services/currency_service.py）。
+    #   cost_usd —— 内部统一聚合口径（USD）。所有 dashboard/bill/alert 只认它，绝不混币 SUM。
+    #   cost_cny —— 给中国客户出账/展示的冻结人民币额。
+    # 历史行由 scripts/backfill_dual_currency.py 回填；老数据读取处用 COALESCE(cost_usd, cost) 兜底。
+    cost_usd: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    cost_cny: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     # 标价（折扣前）。GCP 是 SUM(cost_at_list)。和 cost 的差值就是 credits 总折扣。
     # 其他 provider 暂未对接，写 NULL。
     cost_at_list: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))

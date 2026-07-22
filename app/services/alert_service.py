@@ -23,6 +23,15 @@ ACCOUNT_QUOTA_TRIGGER_PCT = 0.9
 
 logger = logging.getLogger(__name__)
 
+
+def _cost():
+    """告警一律按 USD 规范化列(cost_usd)评估,老行未回填时回退 cost。
+
+    阈值(threshold_value)历史上以 USD 设定,这样保证评估口径与阈值一致、绝不混币。
+    """
+    return func.coalesce(BillingData.cost_usd, BillingData.cost)
+
+
 _sync_engine = None
 
 
@@ -125,7 +134,7 @@ def _check_monthly_budget_multi(session: Session, rule: AlertRule, today: dt.dat
     month_start = today.replace(day=1)
     month_end = today + dt.timedelta(days=1)
 
-    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+    used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
         BillingData.project_id.in_(project_ids),
         BillingData.date >= month_start,
         BillingData.date < month_end,
@@ -168,7 +177,7 @@ def _check_yearly_budget_multi(session: Session, rule: AlertRule, today: dt.date
     year_start = today.replace(month=1, day=1)
     year_end = today + dt.timedelta(days=1)
 
-    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+    used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
         BillingData.project_id.in_(project_ids),
         BillingData.date >= year_start,
         BillingData.date < year_end,
@@ -221,7 +230,7 @@ def _check_custom_period_budget_multi(session: Session, rule: AlertRule, today: 
     period_start = rule.start_date
     period_end = rule.end_date + dt.timedelta(days=1)  # 包含结束日期当天
 
-    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+    used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
         BillingData.project_id.in_(project_ids),
         BillingData.date >= period_start,
         BillingData.date < period_end,
@@ -257,7 +266,7 @@ def _check_account_lifetime_quota(session: Session, rule: AlertRule):
     if not target_id:
         return
 
-    used = session.query(func.coalesce(func.sum(BillingData.cost), 0)).filter(
+    used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
         BillingData.project_id == target_id
     ).scalar() or Decimal("0")
     used_f = float(used)
@@ -278,7 +287,7 @@ def _check_account_lifetime_quota(session: Session, rule: AlertRule):
 def _get_daily_cost(session: Session, rule: AlertRule, day: dt.date) -> Decimal | None:
     """Get total cost for a single day for the rule's target."""
     next_day = day + dt.timedelta(days=1)
-    query = session.query(func.sum(BillingData.cost)).filter(
+    query = session.query(func.sum(_cost())).filter(
         BillingData.date >= day,
         BillingData.date < next_day,
     )
@@ -320,7 +329,7 @@ def _check_monthly_commitment(session: Session, rule: AlertRule, today: dt.date)
 
 def _get_monthly_cost(session: Session, rule: AlertRule, start: dt.date, end: dt.date) -> Decimal | None:
     """Get total cost for a month for the rule's target."""
-    query = session.query(func.sum(BillingData.cost)).filter(
+    query = session.query(func.sum(_cost())).filter(
         BillingData.date >= start,
         BillingData.date < end,
     )
@@ -333,7 +342,7 @@ def _get_monthly_cost(session: Session, rule: AlertRule, start: dt.date, end: dt
 
 def _evaluate_rule(session: Session, rule: AlertRule, start: dt.date, end: dt.date) -> Decimal | None:
     """Evaluate a single rule and return the actual value."""
-    query = session.query(func.sum(BillingData.cost)).filter(
+    query = session.query(func.sum(_cost())).filter(
         BillingData.date >= start,
         BillingData.date < end,
     )

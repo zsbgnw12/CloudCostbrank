@@ -13,6 +13,9 @@ from app.services import dashboard_service
 # 数据范围由各 endpoint 内部用 visible_data_source_ids 限定。
 router = APIRouter()
 
+# 展示币种:usd(默认,内部统一口径)/ cny(冻结人民币额)。所有聚合按此选列,绝不混币。
+_CURRENCY = Query("usd", pattern=r"^(usd|cny)$", description="展示币种 usd|cny")
+
 
 async def _scope(db: AsyncSession, principal: Principal) -> list[int] | None:
     return await visible_data_source_ids(db, principal)
@@ -21,10 +24,11 @@ async def _scope(db: AsyncSession, principal: Principal) -> list[int] | None:
 @router.get("/overview")
 async def overview(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_overview(db, month, await _scope(db, principal))
+    return await dashboard_service.get_overview(db, month, await _scope(db, principal), currency)
 
 
 @router.get("/trend")
@@ -32,38 +36,42 @@ async def trend(
     start: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     end: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     granularity: str = Query("daily", pattern=r"^(daily|weekly|monthly)$"),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_trend(db, start, end, granularity, await _scope(db, principal))
+    return await dashboard_service.get_trend(db, start, end, granularity, await _scope(db, principal), currency)
 
 
 @router.get("/by-provider")
 async def by_provider(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_by_provider(db, month, await _scope(db, principal))
+    return await dashboard_service.get_by_provider(db, month, await _scope(db, principal), currency)
 
 
 @router.get("/by-category")
 async def by_category(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_by_category(db, month, await _scope(db, principal))
+    return await dashboard_service.get_by_category(db, month, await _scope(db, principal), currency)
 
 
 @router.get("/by-project")
 async def by_project(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     limit: int = Query(20, ge=1, le=100),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_by_project(db, month, limit, await _scope(db, principal))
+    return await dashboard_service.get_by_project(db, month, limit, await _scope(db, principal), currency)
 
 
 @router.get("/by-service")
@@ -71,38 +79,42 @@ async def by_service(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     provider: str | None = None,
     limit: int = Query(20, ge=1, le=100),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_by_service(db, month, provider, limit, await _scope(db, principal))
+    return await dashboard_service.get_by_service(db, month, provider, limit, await _scope(db, principal), currency)
 
 
 @router.get("/by-region")
 async def by_region(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_by_region(db, month, await _scope(db, principal))
+    return await dashboard_service.get_by_region(db, month, await _scope(db, principal), currency)
 
 
 @router.get("/top-growth")
 async def top_growth(
     period: str = Query("7d"),
     limit: int = Query(10, ge=1, le=50),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_top_growth(db, period, limit, await _scope(db, principal))
+    return await dashboard_service.get_top_growth(db, period, limit, await _scope(db, principal), currency)
 
 
 @router.get("/unassigned")
 async def unassigned(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
-    return await dashboard_service.get_unassigned(db, month, await _scope(db, principal))
+    return await dashboard_service.get_unassigned(db, month, await _scope(db, principal), currency)
 
 
 @router.get("/bundle")
@@ -110,14 +122,15 @@ async def dashboard_bundle(
     month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     granularity: str = Query("daily", pattern=r"^(daily|weekly|monthly)$"),
     service_limit: int = Query(10, ge=1, le=100),
+    currency: str = _CURRENCY,
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
     scope = await _scope(db, principal)
-    overview = await dashboard_service.get_overview(db, month, scope)
-    trend = await dashboard_service.get_trend(db, month, month, granularity, scope)
-    by_provider = await dashboard_service.get_by_provider(db, month, scope)
-    by_service = await dashboard_service.get_by_service(db, month, None, service_limit, scope)
+    overview = await dashboard_service.get_overview(db, month, scope, currency)
+    trend = await dashboard_service.get_trend(db, month, month, granularity, scope, currency)
+    by_provider = await dashboard_service.get_by_provider(db, month, scope, currency)
+    by_service = await dashboard_service.get_by_service(db, month, None, service_limit, scope, currency)
     return {
         "overview": overview,
         "trend": trend,

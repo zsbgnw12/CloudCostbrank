@@ -25,6 +25,10 @@ class BillingDailySummary(Base):
     project_id: Mapped[str | None] = mapped_column(String(200))
     product: Mapped[str | None] = mapped_column(String(200))
     total_cost: Mapped[Decimal] = mapped_column(DECIMAL(20, 6), nullable=False, default=Decimal("0"))
+    # 双币规范化合计（SUM 自 billing_summary.cost_usd / cost_cny）。dashboard 按展示币种选读。
+    # 老数据为 NULL，读取处用 COALESCE(total_cost_usd, total_cost) 兜底。
+    total_cost_usd: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
+    total_cost_cny: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))
     # 标价合计与折扣合计；refresh_daily_summary 直接 SUM 自 billing_data。
     # 老数据这两列是 NULL；新 sync 之后会被填上。dashboard 读时用 COALESCE 兜底。
     total_cost_at_list: Mapped[Decimal | None] = mapped_column(DECIMAL(20, 6))

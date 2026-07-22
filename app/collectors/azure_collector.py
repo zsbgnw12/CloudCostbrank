@@ -215,10 +215,23 @@ class AzureCollector(BaseCollector):
         # Product logic from original script
         charge_type = row.get("chargetype", "")
         pricing_model = row.get("pricingmodel", "")
+        publisher_type = str(row.get("publishertype", "") or "")
+        publisher_name = str(row.get("publishername", "") or "")
         if charge_type in ("Purchase", "Refund") and pricing_model == "OnDemand":
             product = str(row.get("productname", "") or "")
         else:
             product = str(row.get("metercategory", "") or "")
+
+        # product 回退链:Marketplace / 第三方发布商的行常常 MeterCategory 为空
+        # (历史上导致 462 行 product='' 的 4.8w 美元无法归类),依次回退到
+        # ProductName → PublisherName → MeterSubCategory,仍空才记 'Unknown'。
+        if not product.strip():
+            product = (
+                str(row.get("productname", "") or "").strip()
+                or publisher_name.strip()
+                or str(row.get("metersubcategory", "") or "").strip()
+                or "Unknown"
+            )
 
         subscription_id = str(row.get("subscriptionid", "") or "")
 
@@ -238,6 +251,12 @@ class AzureCollector(BaseCollector):
             "Subscription Name": str(row.get("subscriptionname", "") or ""),
             "Charge Type": str(row.get("chargetype", "") or ""),
             "Pricing Model": str(row.get("pricingmodel", "") or ""),
+            # PublisherType 用于区分 Azure 一方服务 vs Marketplace/第三方(如 MS Bing
+            # Services、GitHub)。成本分析默认视图会把 Marketplace 单独归类,这也是
+            # 我方合计比"成本分析"多几百美刀的来源——保留此字段以便按发布商对齐/过滤。
+            "Publisher Type": publisher_type,
+            "Publisher Name": publisher_name,
+            "Meter SubCategory": str(row.get("metersubcategory", "") or ""),
         }
 
         # billing_account_id: 优先用 BillingAccountId(EA / MCA 财务主键),

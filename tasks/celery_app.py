@@ -45,6 +45,11 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.sync_tasks.gc_taiji_raw_logs",
         "schedule": crontab(hour=4, minute=0),
     },
+    "daily-exchange-rate": {
+        # 01:30 先拉汇率,早于 02:00 的 daily-sync,保证双币换算有当日汇率可用。
+        "task": "tasks.sync_tasks.sync_exchange_rate",
+        "schedule": crontab(hour=1, minute=30),
+    },
     "ensure-billing-partitions-1": {
         "task": "tasks.partition_maintenance.ensure_billing_summary_partition",
         "schedule": crontab(day_of_month=1, hour=2, minute=0),

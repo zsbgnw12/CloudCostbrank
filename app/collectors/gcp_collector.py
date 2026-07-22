@@ -125,9 +125,12 @@ class GCPCollector(BaseCollector):
 
         # GROUP BY 现在按 unique key 完整对齐：(date, project_id, service, sku, region, cost_type)
         # 把 cost_type 加进 GROUP BY 以后 regular/tax 不再被混算成一行，对应 DB 唯一键 019 后的形态。
+        # 时区标准:全系统统一按 UTC+0 日界归集(与 AWS Cost Explorer / Azure Cost
+        # Management / Taiji 一致,也与云账单/发票口径一致)。DATE() 默认即按 UTC 截断,
+        # 这里显式写出 "UTC" 以杜绝歧义。切勿改成本地时区——会与云发票对不上且日粒度不可逆。
         query = f"""
         SELECT
-            DATE(usage_start_time) as billed_date,
+            DATE(usage_start_time, "UTC") as billed_date,
             project.id as project_id,
             ANY_VALUE(project.name) as project_name,
             ANY_VALUE(service.id) as service_id,
