@@ -31,6 +31,7 @@ from app.models.project import Project
 from app.models.project_assignment_log import ProjectAssignmentLog
 from app.models.project_customer_assignment import ProjectCustomerAssignment
 from app.models.supplier import Supplier
+from app.models.sync_log import SyncLog
 from app.models.supply_source import SupplySource
 from app.config import settings
 from app.services.crypto_service import encrypt_dict, decrypt_to_dict
@@ -132,6 +133,11 @@ class ServiceAccountListItem(BaseModel):
     order_method: str | None = None
     customer_codes: list[str] = []
     created_at: dt.datetime
+    # 同步状态（来自该账号绑定的 data_source；GCP 账号未绑则为 None）
+    data_source_id: int | None = None
+    sync_status: str | None = None       # success / failed / running / pending
+    last_sync_at: dt.datetime | None = None
+    sync_error: str | None = None        # 最近一条失败日志的错误信息（sync_status=failed 时有意义）
 
 
 class HistoryItem(BaseModel):
@@ -371,6 +377,7 @@ async def list_accounts(
             Project.order_method,
             Project.created_at,
             Project.entity_id,
+            Project.data_source_id,
             Entity.name.label("entity_name"),
             SupplySource.provider,
             Supplier.name.label("supplier_name"),
@@ -416,6 +423,26 @@ async def list_accounts(
     rows = (await db.execute(stmt)).all()
 
     codes_map = await _codes_by_project_ids(db, [r.id for r in rows])
+
+    # 同步状态:按本页账号绑定的 data_source 批量取 sync_status/last_sync_at + 最近一条失败原因
+    ds_ids = {r.data_source_id for r in rows if r.data_source_id is not None}
+    ds_status: dict[int, tuple[str | None, dt.datetime | None]] = {}
+    ds_error: dict[int, str | None] = {}
+    if ds_ids:
+        for d in (await db.execute(
+            select(DataSource.id, DataSource.sync_status, DataSource.last_sync_at)
+            .where(DataSource.id.in_(ds_ids))
+        )).all():
+            ds_status[d.id] = (d.sync_status, d.last_sync_at)
+        # 每个 data_source 最近一条 failed 日志(Postgres DISTINCT ON)
+        for e in (await db.execute(
+            select(SyncLog.data_source_id, SyncLog.error_message)
+            .where(SyncLog.data_source_id.in_(ds_ids), SyncLog.status == "failed")
+            .order_by(SyncLog.data_source_id, SyncLog.id.desc())
+            .distinct(SyncLog.data_source_id)
+        )).all():
+            ds_error[e.data_source_id] = e.error_message
+
     return [
         ServiceAccountListItem(
             id=r.id,
@@ -430,6 +457,11 @@ async def list_accounts(
             order_method=r.order_method,
             customer_codes=codes_map.get(r.id, []),
             created_at=r.created_at,
+            data_source_id=r.data_source_id,
+            sync_status=ds_status.get(r.data_source_id, (None, None))[0],
+            last_sync_at=ds_status.get(r.data_source_id, (None, None))[1],
+            sync_error=ds_error.get(r.data_source_id)
+                if ds_status.get(r.data_source_id, (None, None))[0] == "failed" else None,
         )
         for r in rows
     ]
