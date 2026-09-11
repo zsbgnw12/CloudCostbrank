@@ -354,11 +354,15 @@ def _date_range_to_unix(start_date: str, end_date: str) -> tuple[int, int]:
 
 def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
     """
-    将 taiji 原始请求日志按 (date, token_id, model_name, channel_name) 聚合成 billing row。
+    将 taiji 原始请求日志按 (date, project_id, model_name, channel_name) 聚合成 billing row。
+
+    project_id 取 "<username>:<token_name>"，与 Blob 路径（_aggregate_snapshot）以及
+    历史手工导入的数据保持同一套服务账号身份；聚合键必须与 project_id 同粒度，否则同名
+    令牌会产出多行相同唯一键的数据，在 upsert 时相互覆盖而丢失费用。
 
     同时为每行附带 `_token_usage` 子字典（sync_service 会据此再做一次 token_usage 表聚合）。
     """
-    # (date, token_id, token_name, username, model, channel) → 累加器
+    # (date, project_id, model, channel) → 累加器
     bucket: dict[tuple, dict] = defaultdict(lambda: {
         "quota_sum": 0,
         "prompt_tokens": 0,
@@ -366,6 +370,9 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
         "cache_tokens": 0,
         "request_count": 0,
         "total_use_time_ms": 0,
+        "username": "",
+        "token_name": "",
+        "token_id": 0,
     })
 
     for log in raw_logs:
@@ -380,8 +387,18 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
         model_name = log.get("model_name") or "unknown"
         channel_name = log.get("channel_name") or _guess_channel_from_other(log.get("other"))
 
-        key = (date, int(token_id), token_name, username, model_name, channel_name or "")
+        # 服务账号身份与 Blob 路径对齐：正常情况取 "<username>:<token_name>"；
+        # 缺 username 或 token_name 时 _render_project_name 会带上 tok#<id> 后缀，
+        # 因此退化数据不会互相撞车，而同名不同 id 的令牌会被合并成同一个服务账号
+        # —— 这与快照口径一致（快照本身就按 username→token_name 组织）。
+        project_id = _render_project_name(username, token_name, token_id)
+
+        key = (date, project_id, model_name, channel_name or "")
         acc = bucket[key]
+        if not acc["username"] and not acc["token_name"]:
+            acc["username"] = username
+            acc["token_name"] = token_name
+            acc["token_id"] = int(token_id)
         acc["quota_sum"] += int(log.get("quota") or 0)
         acc["prompt_tokens"] += int(log.get("prompt_tokens") or 0)
         acc["completion_tokens"] += int(log.get("completion_tokens") or 0)
@@ -392,11 +409,15 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
         acc["cache_tokens"] += cache
 
     rows: list[dict] = []
-    for (date, token_id, token_name, username, model_name, channel), acc in bucket.items():
+    for (date, project_id, model_name, channel), acc in bucket.items():
         cost_usd = acc["quota_sum"] / quota_per_usd if quota_per_usd > 0 else 0.0
         total_tokens = acc["prompt_tokens"] + acc["completion_tokens"]
-        project_id = str(token_id)
-        project_name = _render_project_name(username, token_name, token_id)
+        username = acc["username"]
+        token_name = acc["token_name"]
+        token_id = acc["token_id"]
+        # project_id 已经是可读的 "<username>:<token_name>"，与 taiji-ingest-day 的
+        # 手工导入路径一致（那边同样是 project_name = project_id）。
+        project_name = project_id
 
         row = {
             "date": date,
