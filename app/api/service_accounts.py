@@ -363,7 +363,7 @@ async def list_accounts(
     status: str | None = None,
     customer_code: str | None = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=500),
+    page_size: int = Query(100, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
@@ -465,6 +465,41 @@ async def list_accounts(
         )
         for r in rows
     ]
+
+
+class AccountsSummary(BaseModel):
+    total: int
+    status_counts: dict[str, int]   # {active: N, standby: N, ...}
+    failed: int                     # 同步失败的账号数(绑定 data_source.sync_status='failed')
+
+
+@router.get("/summary", response_model=AccountsSummary)
+async def accounts_summary(
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """轻量聚合:账号状态分布 + 同步失败数。给仪表盘等只要数字的地方用,
+    避免为了显示几个数字去拉全量账号列表。遵循数据范围。"""
+    stmt = (
+        select(Project.status, DataSource.sync_status)
+        .join(SupplySource, Project.supply_source_id == SupplySource.id)
+        .outerjoin(DataSource, Project.data_source_id == DataSource.id)
+        .where(Project.recycled_at.is_(None))
+    )
+    if not has_full_access(principal):
+        scope_providers = extract_providers_from_roles(principal.roles)
+        if not scope_providers:
+            return AccountsSummary(total=0, status_counts={}, failed=0)
+        stmt = stmt.where(SupplySource.provider.in_(scope_providers))
+
+    rows = (await db.execute(stmt)).all()
+    status_counts: dict[str, int] = {}
+    failed = 0
+    for r in rows:
+        status_counts[r.status] = status_counts.get(r.status, 0) + 1
+        if r.sync_status == "failed":
+            failed += 1
+    return AccountsSummary(total=len(rows), status_counts=status_counts, failed=failed)
 
 
 @router.post(
