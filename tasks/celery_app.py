@@ -50,6 +50,12 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.sync_tasks.sync_exchange_rate",
         "schedule": crontab(hour=1, minute=30),
     },
+    "sweep-orphan-sync-logs": {
+        # 每小时收尾"僵尸" running 同步日志(worker 硬杀留下的孤儿)。
+        # 阈值 60min > time_limit 40min,零误杀。
+        "task": "tasks.sync_tasks.sweep_orphan_sync_logs",
+        "schedule": crontab(minute=15),
+    },
     "ensure-billing-partitions-1": {
         "task": "tasks.partition_maintenance.ensure_billing_summary_partition",
         "schedule": crontab(day_of_month=1, hour=2, minute=0),

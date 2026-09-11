@@ -90,6 +90,49 @@ def complete_sync_log(log_id: int, *, records_fetched: int, records_upserted: in
         session.commit()
 
 
+def sweep_orphan_sync_logs(older_than_minutes: int = 60) -> dict:
+    """收尾"僵尸" running 同步日志:worker 被硬杀(命中 time_limit 的 SIGKILL、
+    容器重启、OOM)时,except 分支来不及执行,行会永远卡在 running。
+
+    安全护栏:单条任务日志的存活时间不可能超过 time_limit(见 tasks/sync_tasks.py
+    的 @celery_app.task(time_limit=2400),即 40 分钟);重试会新建日志行而非复用。
+    因此 start_time 早于 older_than_minutes(默认 60min > 40min 硬上限)的 running
+    必定是孤儿,收尾它零误杀。
+
+    动作(单事务):
+      1) 这些 running 日志 → failed,写 end_time / error_message;
+      2) 对应 data_source 若 sync_status 仍卡在 running,一并复位为 failed。
+    返回 {"swept": 收尾日志数, "sources_reset": 复位货源数}。
+    """
+    engine = _get_sync_engine()
+    with engine.begin() as conn:
+        swept = conn.execute(text("""
+            UPDATE sync_logs
+            SET status = 'failed',
+                end_time = now(),
+                error_message = COALESCE(NULLIF(error_message, ''),
+                    '任务中断:worker 重启/超时导致记录长期卡在 running(未产生数据),由清道夫统一收尾。')
+            WHERE status = 'running'
+              AND start_time < now() - make_interval(mins => :mins)
+        """), {"mins": older_than_minutes}).rowcount
+
+        sources_reset = conn.execute(text("""
+            UPDATE data_sources
+            SET sync_status = 'failed'
+            WHERE sync_status = 'running'
+              AND NOT EXISTS (
+                  SELECT 1 FROM sync_logs sl
+                  WHERE sl.data_source_id = data_sources.id
+                    AND sl.status = 'running'
+              )
+        """)).rowcount
+
+    if swept or sources_reset:
+        logger.info("sweep_orphan_sync_logs: 收尾 %s 条僵尸日志, 复位 %s 个货源状态",
+                    swept, sources_reset)
+    return {"swept": swept, "sources_reset": sources_reset}
+
+
 def update_data_source_sync_status(data_source_id: int, status: str):
     engine = _get_sync_engine()
     with Session(engine) as session:

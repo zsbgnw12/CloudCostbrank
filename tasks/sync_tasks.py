@@ -260,6 +260,14 @@ def gc_taiji_raw_logs():
 
 
 @celery_app.task
+def sweep_orphan_sync_logs():
+    """每小时收尾卡在 running 的僵尸同步日志(worker 被硬杀留下的孤儿)。
+    阈值 60min > time_limit 40min 硬上限,零误杀。见 service 函数说明。"""
+    from app.services.sync_service import sweep_orphan_sync_logs as _sweep
+    return _sweep(older_than_minutes=60)
+
+
+@celery_app.task
 def generate_monthly_bills(month: str):
     """Generate monthly bills (sync wrapper)."""
     from app.services.bill_service import generate_bills
