@@ -57,6 +57,7 @@ class SyncLogRead(BaseModel):
     id: int
     data_source_id: int
     celery_task_id: str | None
+    batch_id: str | None = None
     start_time: dt.datetime
     end_time: dt.datetime | None
     status: str | None

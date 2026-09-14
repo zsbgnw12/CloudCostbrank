@@ -1,6 +1,7 @@
 """Data sync API routes."""
 
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, text
@@ -142,8 +143,9 @@ async def sync_one(
     # 数据范围:用户必须能管该 data_source 所属 cloud_account
     await ensure_data_source_visible(db, principal, data_source_id)
     from tasks.sync_tasks import sync_data_source
-    result = sync_data_source.delay(data_source_id, body.start_month, body.end_month)
-    return {"task_id": result.id, "status": "dispatched"}
+    batch_id = uuid.uuid4().hex  # 手动同步单个源 = 一个只含 1 行的任务
+    result = sync_data_source.delay(data_source_id, body.start_month, body.end_month, batch_id=batch_id)
+    return {"task_id": result.id, "status": "dispatched", "batch_id": batch_id}
 
 
 @router.get("/status/{task_id}")
@@ -162,7 +164,8 @@ async def sync_status(task_id: str):
 async def sync_logs(
     data_source_id: int | None = None,
     status: str | None = None,
-    limit: int = Query(50, ge=1, le=200),
+    batch_id: str | None = None,
+    limit: int = Query(50, ge=1, le=2000),  # 单批次(如太极 600+ 服务账号)点进去需一次取全
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ):
@@ -177,5 +180,71 @@ async def sync_logs(
         stmt = stmt.where(SyncLog.data_source_id == data_source_id)
     if status:
         stmt = stmt.where(SyncLog.status == status)
+    if batch_id:
+        stmt = stmt.where(SyncLog.batch_id == batch_id)
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+@router.get("/batches")
+async def sync_batches(
+    limit: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+):
+    """同步任务列表:把同一次派发(共享 batch_id)的多条日志聚合成"任务"。
+    每个任务返回开始时间、总数/成功/失败/运行中、涉及的云、查询日期区间。
+    点进去看这批各服务账号明细:GET /api/sync/logs?batch_id=<batch_id>&limit=2000。
+    仅返回带 batch_id 的记录(本功能上线后的同步);历史无批次日志不在此列。
+    """
+    params: dict = {"limit": limit}
+    scope_sql = ""
+    if not has_full_access(principal):
+        visible = await visible_data_source_ids(db, principal)
+        if not visible:
+            return []
+        # 展开为具名参数,避免 IN 绑定问题
+        ids = list(visible)
+        placeholders = ", ".join(f":v{i}" for i in range(len(ids)))
+        scope_sql = f" AND sl.data_source_id IN ({placeholders})"
+        params.update({f"v{i}": v for i, v in enumerate(ids)})
+
+    rows = (await db.execute(text(f"""
+        SELECT
+          sl.batch_id AS batch_id,
+          MIN(sl.start_time) AS started_at,
+          MAX(COALESCE(sl.end_time, sl.start_time)) AS last_activity,
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE sl.status = 'success') AS success,
+          COUNT(*) FILTER (WHERE sl.status = 'failed') AS failed,
+          COUNT(*) FILTER (WHERE sl.status = 'running') AS running,
+          MIN(sl.query_start_date)::text AS date_start,
+          MAX(sl.query_end_date)::text AS date_end,
+          ARRAY_AGG(DISTINCT ca.provider) AS providers
+        FROM sync_logs sl
+        JOIN data_sources ds ON sl.data_source_id = ds.id
+        JOIN cloud_accounts ca ON ds.cloud_account_id = ca.id
+        WHERE sl.batch_id IS NOT NULL{scope_sql}
+        GROUP BY sl.batch_id
+        ORDER BY started_at DESC
+        LIMIT :limit
+    """), params)).mappings().all()
+
+    out = []
+    for r in rows:
+        running, failed = r["running"], r["failed"]
+        overall = "running" if running > 0 else ("failed" if failed > 0 else "success")
+        out.append({
+            "batch_id": r["batch_id"],
+            "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+            "last_activity": r["last_activity"].isoformat() if r["last_activity"] else None,
+            "total": r["total"],
+            "success": r["success"],
+            "failed": failed,
+            "running": running,
+            "overall_status": overall,
+            "date_start": r["date_start"],
+            "date_end": r["date_end"],
+            "providers": [p for p in (r["providers"] or []) if p],
+        })
+    return out

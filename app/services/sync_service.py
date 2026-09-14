@@ -60,12 +60,14 @@ def get_active_data_sources() -> list[dict]:
         ]
 
 
-def create_sync_log(data_source_id: int, celery_task_id: str, start_date: str, end_date: str) -> int:
+def create_sync_log(data_source_id: int, celery_task_id: str, start_date: str, end_date: str,
+                    batch_id: str | None = None) -> int:
     engine = _get_sync_engine()
     with Session(engine) as session:
         log = SyncLog(
             data_source_id=data_source_id,
             celery_task_id=celery_task_id,
+            batch_id=batch_id,
             start_time=dt.datetime.utcnow(),
             status="running",
             query_start_date=dt.date.fromisoformat(start_date),
