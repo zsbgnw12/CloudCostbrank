@@ -20,7 +20,7 @@ import hashlib
 import logging
 from decimal import Decimal
 
-from sqlalchemy import func, case, text, literal_column
+from sqlalchemy import and_, func, case, text, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.sql.selectable import Select
@@ -31,6 +31,7 @@ from app.models.project import Project
 from app.models.data_source import DataSource
 from app.models.category import Category
 from app.models.supply_source import SupplySource
+from app.services.billing_scope import same_data_source
 
 import redis.asyncio as aioredis
 from app.config import settings
@@ -366,7 +367,10 @@ async def get_by_project(
         )
         .outerjoin(
             Project,
-            DS.project_id == Project.external_project_id,
+            and_(
+                DS.project_id == Project.external_project_id,
+                same_data_source(DS),
+            ),
         )
         .outerjoin(
             SupplySource,
@@ -499,7 +503,10 @@ async def get_top_growth(
         )
         .outerjoin(
             Project,
-            DS.project_id == Project.external_project_id,
+            and_(
+                DS.project_id == Project.external_project_id,
+                same_data_source(DS),
+            ),
         )
         .outerjoin(
             SupplySource,
@@ -559,7 +566,10 @@ async def get_unassigned(
         )
         .outerjoin(
             Project,
-            BillingData.project_id == Project.external_project_id,
+            and_(
+                BillingData.project_id == Project.external_project_id,
+                same_data_source(BillingData),
+            ),
         )
         .outerjoin(
             SupplySource,

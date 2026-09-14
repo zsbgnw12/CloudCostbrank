@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func, tuple_
+from sqlalchemy import and_, select, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal
@@ -30,6 +30,7 @@ from app.schemas.taiji import (
     TaijiIngestRequest,
     TaijiIngestResponse,
 )
+from app.services.billing_scope import same_data_source
 
 router = APIRouter()
 
@@ -104,7 +105,10 @@ def _metering_scope(
         stmt = (
             stmt.join(
                 Project,
-                BillingData.project_id == func.trim(Project.external_project_id),
+                and_(
+                    BillingData.project_id == func.trim(Project.external_project_id),
+                    same_data_source(BillingData),
+                ),
             )
             .join(SupplySource, Project.supply_source_id == SupplySource.id)
             .where(
@@ -116,7 +120,10 @@ def _metering_scope(
         stmt = (
             stmt.join(
                 Project,
-                BillingData.project_id == func.trim(Project.external_project_id),
+                and_(
+                    BillingData.project_id == func.trim(Project.external_project_id),
+                    same_data_source(BillingData),
+                ),
             )
             .join(SupplySource, Project.supply_source_id == SupplySource.id)
             .where(
@@ -128,7 +135,10 @@ def _metering_scope(
         stmt = (
             stmt.join(
                 Project,
-                BillingData.project_id == func.trim(Project.external_project_id),
+                and_(
+                    BillingData.project_id == func.trim(Project.external_project_id),
+                    same_data_source(BillingData),
+                ),
             )
             .join(SupplySource, Project.supply_source_id == SupplySource.id)
             .where(
@@ -140,7 +150,10 @@ def _metering_scope(
         stmt = (
             stmt.join(
                 Project,
-                BillingData.project_id == func.trim(Project.external_project_id),
+                and_(
+                    BillingData.project_id == func.trim(Project.external_project_id),
+                    same_data_source(BillingData),
+                ),
             )
             .join(SupplySource, Project.supply_source_id == SupplySource.id)
             .join(Supplier, SupplySource.supplier_id == Supplier.id)

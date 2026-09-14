@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
-from sqlalchemy import select, func
+from sqlalchemy import and_, select, func, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_principal, require_roles
@@ -36,6 +36,7 @@ from app.models.supply_source import SupplySource
 from app.config import settings
 from app.services.crypto_service import encrypt_dict, decrypt_to_dict
 from app.services.default_supply_sources import ensure_other_gcp_supply_source_id
+from app.services.billing_scope import same_data_source
 
 router = APIRouter()
 
@@ -677,7 +678,10 @@ async def daily_report(
         )
         .join(
             Project,
-            func.trim(BillingData.project_id) == func.trim(Project.external_project_id),
+            and_(
+                func.trim(BillingData.project_id) == func.trim(Project.external_project_id),
+                same_data_source(BillingData),
+            ),
         )
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
         .where(
@@ -2152,6 +2156,11 @@ async def get_costs(
         .where(
             func.trim(BillingData.project_id) == project.external_project_id.strip(),
             BillingData.provider == prov,
+            # Same rule as the shared join predicate: scope to this account's own
+            # data source when it has one, stay permissive when it does not.
+            BillingData.data_source_id == project.data_source_id
+            if project.data_source_id is not None
+            else true(),
             BillingData.date >= sd,
             BillingData.date < ed,
         )
@@ -2262,6 +2271,11 @@ async def export_account_costs(
         .where(
             func.trim(BillingData.project_id) == project.external_project_id.strip(),
             BillingData.provider == prov,
+            # Same rule as the shared join predicate: scope to this account's own
+            # data source when it has one, stay permissive when it does not.
+            BillingData.data_source_id == project.data_source_id
+            if project.data_source_id is not None
+            else true(),
             BillingData.date >= sd,
             BillingData.date < ed,
         )
