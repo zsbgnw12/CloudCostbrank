@@ -12,6 +12,9 @@ class SyncLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     data_source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), nullable=False)
     celery_task_id: Mapped[str | None] = mapped_column(String(100))
+    # 同一次派发(一次"同步全部"/一次定时/一次手动单源)的多条日志共享一个 batch_id，
+    # 前端据此把日志分组成"任务"。历史行为 NULL。
+    batch_id: Mapped[str | None] = mapped_column(String(40), index=True)
     start_time: Mapped[dt.datetime] = mapped_column(nullable=False)
     end_time: Mapped[dt.datetime | None] = mapped_column()
     status: Mapped[str | None] = mapped_column(String(15))  # running / success / failed

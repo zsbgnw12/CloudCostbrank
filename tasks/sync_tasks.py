@@ -4,6 +4,7 @@ import calendar
 import datetime as dt
 import json
 import logging
+import uuid
 
 from tasks.celery_app import celery_app
 from app.services.sync_service import (
@@ -32,7 +33,8 @@ def _month_to_date_range(start_month: str, end_month: str | None = None):
 
 
 def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *,
-                   celery_task_id: str | None = None, replace: bool = False):
+                   celery_task_id: str | None = None, replace: bool = False,
+                   batch_id: str | None = None):
     """Core sync logic — invoked by both month-range and date-range tasks.
 
     replace=True:整月/显式区间重同步走"先删后插"(清该货源该区间旧行再插),
@@ -45,7 +47,7 @@ def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *,
 
     log_id = None
     try:
-        log_id = create_sync_log(data_source_id, celery_task_id, start_date, end_date)
+        log_id = create_sync_log(data_source_id, celery_task_id, start_date, end_date, batch_id=batch_id)
         update_data_source_sync_status(data_source_id, "running")
 
         from sqlalchemy.orm import Session
@@ -158,21 +160,24 @@ def _run_sync_core(data_source_id: int, start_date: str, end_date: str, *,
 
 
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=1800, time_limit=2400)
-def sync_data_source(self, data_source_id: int, start_month: str, end_month: str | None = None):
+def sync_data_source(self, data_source_id: int, start_month: str, end_month: str | None = None,
+                     batch_id: str | None = None):
     """Sync a single data source by MONTH range (手动/整月重同步:走先删后插)。"""
     start_date, end_date = _month_to_date_range(start_month, end_month)
     try:
         return _run_sync_core(data_source_id, start_date, end_date,
-                              celery_task_id=self.request.id, replace=True)
+                              celery_task_id=self.request.id, replace=True, batch_id=batch_id)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
 
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=1800, time_limit=2400)
-def sync_data_source_by_dates(self, data_source_id: int, start_date: str, end_date: str):
+def sync_data_source_by_dates(self, data_source_id: int, start_date: str, end_date: str,
+                              batch_id: str | None = None):
     """Sync a single data source by explicit DATE range (YYYY-MM-DD)."""
     try:
-        return _run_sync_core(data_source_id, start_date, end_date, celery_task_id=self.request.id)
+        return _run_sync_core(data_source_id, start_date, end_date,
+                              celery_task_id=self.request.id, batch_id=batch_id)
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
@@ -183,11 +188,12 @@ def sync_all(start_month: str, end_month: str | None = None, provider: str | Non
     sources = get_active_data_sources()
     if provider:
         sources = [s for s in sources if s["provider"] == provider]
+    batch_id = uuid.uuid4().hex  # 本次"同步全部"= 一个任务;所有子任务共享
     task_ids = []
     for src in sources:
-        result = sync_data_source.delay(src["data_source_id"], start_month, end_month)
+        result = sync_data_source.delay(src["data_source_id"], start_month, end_month, batch_id=batch_id)
         task_ids.append(result.id)
-    return {"dispatched": len(task_ids), "task_ids": task_ids}
+    return {"dispatched": len(task_ids), "task_ids": task_ids, "batch_id": batch_id}
 
 
 @celery_app.task
@@ -207,18 +213,20 @@ def sync_recent_days(days: int = 7):
     end = dt.date.today()
     start = end - dt.timedelta(days=max(days, 1) - 1)
     sources = get_active_data_sources()
+    batch_id = uuid.uuid4().hex  # 本次定时滚动同步 = 一个任务
     task_ids = []
     for src in sources:
         result = sync_data_source_by_dates.delay(
-            src["data_source_id"], start.isoformat(), end.isoformat()
+            src["data_source_id"], start.isoformat(), end.isoformat(), batch_id=batch_id
         )
         task_ids.append(result.id)
-    logger.info("sync_recent_days dispatched %d tasks for window %s ~ %s",
-                len(task_ids), start, end)
+    logger.info("sync_recent_days dispatched %d tasks for window %s ~ %s (batch=%s)",
+                len(task_ids), start, end, batch_id)
     return {
         "dispatched": len(task_ids),
         "window": f"{start} ~ {end}",
         "task_ids": task_ids,
+        "batch_id": batch_id,
     }
 
 
