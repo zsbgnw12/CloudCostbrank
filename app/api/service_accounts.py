@@ -1288,29 +1288,6 @@ async def taiji_from_blob(
     if not pairs:
         return TaijiFromBlobResponse(created=0, skipped=[], total_parsed=0, snapshot_date=snapshot_date)
 
-    existing_rows = (
-        await db.execute(
-            select(Project.external_project_id).where(
-                Project.supply_source_id == body.supply_source_id,
-            )
-        )
-    ).scalars().all()
-    existing = set(existing_rows)
-
-    skipped: list[TaijiFromBlobSkip] = []
-    # 待建账号的"骨架"列表 —— 先全部攒起来再一次性批量 flush，把 3N 次数据库
-    # round-trip 压成 4 次（CA、DS、Project、log）。否则上百对账号撞 30s 前端超时。
-    to_create: list[tuple[str, str, str]] = []  # (username, token, external_id)
-    for username, token_name in pairs:
-        external_id = f"{username}:{token_name}"
-        if external_id in existing:
-            skipped.append(TaijiFromBlobSkip(
-                external_project_id=external_id, reason="该货源下已存在同 ID 的账号",
-            ))
-            continue
-        to_create.append((username, token_name, external_id))
-        existing.add(external_id)
-
     # 关键设计：整个 supply_source 共享 ONE CloudAccount + ONE DataSource。
     # 之前每个 (user, token) 建一个独立 DS，每个 DS 都会拉同一份 blob 全量数据，
     # 由于 billing_summary 唯一约束含 data_source_id，N 个 DS 重复插入 N 份相同数据，
@@ -1361,6 +1338,34 @@ async def taiji_from_blob(
         )
         db.add(shared_ds)
         await db.flush()
+
+    # 查重限定在本数据源内 —— 数据源即站点，不同站点上的同名 "<用户名>:<令牌名>"
+    # 是两个不同的令牌。不限定的话后接入的站点会跳过创建自己的项目行，其账单行
+    # 随后匹配不到任何项目，费用从报表中静默消失。
+    # 必须排在 shared_ds 解析之后：这个查询依赖它的 id。
+    existing_rows = (
+        await db.execute(
+            select(Project.external_project_id).where(
+                Project.supply_source_id == body.supply_source_id,
+                Project.data_source_id == shared_ds.id,
+            )
+        )
+    ).scalars().all()
+    existing = set(existing_rows)
+
+    skipped: list[TaijiFromBlobSkip] = []
+    # 待建账号的"骨架"列表 —— 先全部攒起来再一次性批量 flush，把 3N 次数据库
+    # round-trip 压成 4 次（CA、DS、Project、log）。否则上百对账号撞 30s 前端超时。
+    to_create: list[tuple[str, str, str]] = []  # (username, token, external_id)
+    for username, token_name in pairs:
+        external_id = f"{username}:{token_name}"
+        if external_id in existing:
+            skipped.append(TaijiFromBlobSkip(
+                external_project_id=external_id, reason="该数据源下已存在同 ID 的账号",
+            ))
+            continue
+        to_create.append((username, token_name, external_id))
+        existing.add(external_id)
 
     # 一次性批量建 Project，全部指向同一个 shared_ds.id
     projects: list[Project] = []
@@ -1504,10 +1509,14 @@ async def taiji_ingest_day(
             if tn:
                 pairs.append((u, tn))
 
+    # 查重限定在本数据源内 —— 数据源即站点，不同站点上的同名 "<用户名>:<令牌名>"
+    # 是两个不同的令牌。不限定的话后接入的站点会跳过创建自己的项目行，其账单行
+    # 随后匹配不到任何项目，费用从报表中静默消失。
     existing_rows = (
         await db.execute(
             select(Project.external_project_id).where(
                 Project.supply_source_id == body.supply_source_id,
+                Project.data_source_id == shared_ds.id,
             )
         )
     ).scalars().all()

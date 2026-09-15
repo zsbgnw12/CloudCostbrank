@@ -494,13 +494,17 @@ def auto_create_taiji_projects(rows: list[dict], data_source_id: int) -> int:
             logger.warning("auto_create_taiji_projects: resolve SS 失败: %s", e)
             return 0
 
-        # 查重：已存在的 token 不再新建
+        # 查重：已存在的 token 不再新建。
+        # 必须限定在本数据源内 —— 数据源即站点，不同站点上的同名 "<用户名>:<令牌名>"
+        # 是两个不同的令牌。不限定的话站点 B 会把站点 A 的行当成自己的而跳过创建，
+        # 其账单行随后匹配不到任何项目，费用从报表中静默消失。
         existing = set(
             r[0]
             for r in session.query(Project.external_project_id)
             .join(SupplySource, Project.supply_source_id == SupplySource.id)
             .filter(
                 SupplySource.provider == "taiji",
+                Project.data_source_id == data_source_id,
                 Project.external_project_id.in_(list(discovered.keys())),
             )
             .all()

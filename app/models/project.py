@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Text, ForeignKey, UniqueConstraint, Index, func
+from sqlalchemy import String, Text, ForeignKey, Index, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -11,7 +11,23 @@ class Project(Base):
 
     __tablename__ = "projects"
     __table_args__ = (
-        UniqueConstraint("supply_source_id", "external_project_id", name="uq_project_supply_src_ext_id"),
+        # 唯一性按 data_source_id 分成两个部分索引:有数据源(= 站点)的行按站点隔离,
+        # 没有数据源的行维持"同货源下 external_project_id 唯一"的旧语义。见迁移 027。
+        Index(
+            "uq_project_ss_ds_ext_id",
+            "supply_source_id",
+            "data_source_id",
+            "external_project_id",
+            unique=True,
+            postgresql_where=text("data_source_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_project_ss_ext_id_no_ds",
+            "supply_source_id",
+            "external_project_id",
+            unique=True,
+            postgresql_where=text("data_source_id IS NULL"),
+        ),
         Index("ix_projects_status", "status"),
         Index("ix_projects_supply_source_id", "supply_source_id"),
         Index("ix_projects_recycled_at", "recycled_at"),
