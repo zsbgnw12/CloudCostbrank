@@ -31,15 +31,25 @@ router = APIRouter()
 async def list_data_sources(
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
+    provider: str | None = None,
 ):
-    stmt = select(DataSource).order_by(DataSource.id)
+    stmt = (
+        select(DataSource, CloudAccount.provider)
+        .join(CloudAccount, DataSource.cloud_account_id == CloudAccount.id)
+        .order_by(DataSource.id)
+    )
+    if provider:
+        stmt = stmt.where(CloudAccount.provider == provider.strip().lower())
     if not has_full_access(principal):
         visible = await visible_data_source_ids(db, principal)
         if not visible:
             return []
         stmt = stmt.where(DataSource.id.in_(visible))
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    rows = (await db.execute(stmt)).all()
+    return [
+        DataSourceRead.model_validate(ds).model_copy(update={"provider": ca_provider})
+        for ds, ca_provider in rows
+    ]
 
 
 @router.post("/", response_model=DataSourceRead, status_code=201)

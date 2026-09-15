@@ -1,0 +1,176 @@
+[
+  {
+    "name": "billing_account_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "service",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "sku",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "usage_start_time",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "usage_end_time",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "project",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "labels",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": ""
+  },
+  {
+    "name": "system_labels",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": ""
+  },
+  {
+    "name": "location",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "resource",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "tags",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": ""
+  },
+  {
+    "name": "price",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "subscription",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "transaction_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "seller_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "export_time",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "cost",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "currency",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "currency_conversion_rate",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "usage",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "credits",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "description": ""
+  },
+  {
+    "name": "invoice",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "cost_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "adjustment_info",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "cost_at_list",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "cost_at_effective_price_default",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "cost_at_list_consumption_model",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "consumption_model",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "description": ""
+  },
+  {
+    "name": "PARTITIONTIME",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": ""
+  }
+]
