@@ -648,6 +648,9 @@ class AccountDailyCostRow(BaseModel):
     account_name: str
     provider: str
     external_project_id: str
+    # taiji 货源下，数据源即站点。前端据此分组与筛选；其它云按账号自身的绑定返回。
+    data_source_id: int | None = None
+    taiji_username: str | None = None
     date: str
     product: str | None
     service_id: str | None = None
@@ -662,6 +665,7 @@ async def daily_report(
     start_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     provider: str | None = Query(None),
+    data_source_id: int | None = Query(None, description="按数据源（taiji 下即站点）筛选"),
     db: AsyncSession = Depends(get_db),
 ):
     sd = dt.date.fromisoformat(start_date)
@@ -672,6 +676,8 @@ async def daily_report(
             Project.id.label("account_id"),
             Project.name.label("account_name"),
             SupplySource.provider.label("provider"),
+            BillingData.data_source_id,
+            Project.taiji_username,
             BillingData.project_id,
             BillingData.date,
             BillingData.product,
@@ -698,6 +704,8 @@ async def daily_report(
             Project.id,
             Project.name,
             SupplySource.provider,
+            BillingData.data_source_id,
+            Project.taiji_username,
             BillingData.project_id,
             BillingData.date,
             BillingData.product,
@@ -706,6 +714,8 @@ async def daily_report(
     )
     if provider:
         stmt = stmt.where(SupplySource.provider == provider)
+    if data_source_id is not None:
+        stmt = stmt.where(BillingData.data_source_id == data_source_id)
 
     rows = (await db.execute(stmt)).all()
 
@@ -718,6 +728,8 @@ async def daily_report(
             account_name=r.account_name,
             provider=r.provider,
             external_project_id=r.project_id or "",
+            data_source_id=r.data_source_id,
+            taiji_username=r.taiji_username,
             date=str(r.date),
             product=r.product or "Unknown",
             service_id=r.service_id,
@@ -735,6 +747,7 @@ async def export_daily_report(
     start_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     provider: str | None = Query(None),
+    data_source_id: int | None = Query(None, description="按数据源（taiji 下即站点）筛选"),
     discount_pct: float | None = Query(
         None,
         ge=0,
@@ -743,7 +756,15 @@ async def export_daily_report(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await daily_report(start_date, end_date, provider, db)
+    # 关键字传参：daily_report 的签名里 data_source_id 排在 provider 与 db 之间，
+    # 位置传参会把 db 顶到 data_source_id 上，而且只在运行时才炸。
+    rows = await daily_report(
+        start_date=start_date,
+        end_date=end_date,
+        provider=provider,
+        data_source_id=data_source_id,
+        db=db,
+    )
     return _build_excel(rows, f"daily_report_{start_date}_{end_date}.xlsx", discount_pct=discount_pct)
 
 
