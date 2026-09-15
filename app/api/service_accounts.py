@@ -130,6 +130,9 @@ class ServiceAccountListItem(BaseModel):
     entity_id: int | None = None
     entity_name: str | None = None
     external_project_id: str
+    # taiji 货源专用。此前前端靠切 external_project_id 的冒号得到它，三个页面各
+    # 一份且边界处理不一致；现在是 projects 上的真实列。非 taiji 账号为 None。
+    taiji_username: str | None = None
     status: str
     order_method: str | None = None
     customer_codes: list[str] = []
@@ -379,6 +382,7 @@ async def list_accounts(
             Project.created_at,
             Project.entity_id,
             Project.data_source_id,
+            Project.taiji_username,
             Entity.name.label("entity_name"),
             SupplySource.provider,
             Supplier.name.label("supplier_name"),
@@ -454,6 +458,7 @@ async def list_accounts(
             entity_id=r.entity_id,
             entity_name=r.entity_name,
             external_project_id=r.external_project_id,
+            taiji_username=r.taiji_username,
             status=r.status,
             order_method=r.order_method,
             customer_codes=codes_map.get(r.id, []),
@@ -1369,13 +1374,14 @@ async def taiji_from_blob(
 
     # 一次性批量建 Project，全部指向同一个 shared_ds.id
     projects: list[Project] = []
-    for _u, token_name, external_id in to_create:
+    for username, token_name, external_id in to_create:
         project = Project(
             name=token_name,
             external_project_id=external_id,
             supply_source_id=body.supply_source_id,
             entity_id=target_entity_id,
             data_source_id=shared_ds.id,
+            taiji_username=username,
             status="active",
         )
         db.add(project)
@@ -1524,12 +1530,13 @@ async def taiji_ingest_day(
 
     to_create_pairs = [(u, t, f"{u}:{t}") for u, t in pairs if f"{u}:{t}" not in existing]
     projects_created = 0
-    for _u, token_name, external_id in to_create_pairs:
+    for username, token_name, external_id in to_create_pairs:
         project = Project(
             name=token_name,
             external_project_id=external_id,
             supply_source_id=body.supply_source_id,
             data_source_id=shared_ds.id,
+            taiji_username=username,
             status="active",
         )
         db.add(project)

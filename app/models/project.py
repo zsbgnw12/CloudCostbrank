@@ -39,6 +39,10 @@ class Project(Base):
     supply_source_id: Mapped[int] = mapped_column(ForeignKey("supply_sources.id"), nullable=False)
     entity_id: Mapped[int | None] = mapped_column(ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)
     data_source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"))
+    # taiji 货源专用：external_project_id "<用户名>:<令牌名>" 里的用户名部分。
+    # 冗余保存而非每次解析 —— 用户是要筛选和聚合的维度，靠字符串切分做不到，
+    # 而且那段解析此前在前端重复了三份且行为不一致。见迁移 028。
+    taiji_username: Mapped[str | None] = mapped_column(String(200), index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
     status: Mapped[str] = mapped_column(String(15), default="active")  # active / inactive / standby
     notes: Mapped[str | None] = mapped_column(Text)

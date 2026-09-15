@@ -514,11 +514,16 @@ def auto_create_taiji_projects(rows: list[dict], data_source_id: int) -> int:
         for pid, pname in discovered.items():
             if pid in existing:
                 continue
+            # pid 形如 "<用户名>:<令牌名>"。取第一个冒号之前的部分，与迁移 028 的
+            # 回填口径一致；没有冒号或冒号在首位时留 None，表示用户名未知，而不是
+            # 造一个空字符串用户出来。
+            username = pid.split(":", 1)[0] if pid.find(":") > 0 else None
             new_projects.append(Project(
                 name=pname,
                 external_project_id=pid,
                 supply_source_id=ss_id,
                 data_source_id=data_source_id,  # 绑定 DS 便于后续复用归属
+                taiji_username=username,
                 status="standby",
             ))
 
