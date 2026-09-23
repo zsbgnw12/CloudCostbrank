@@ -109,6 +109,8 @@ def main():
             "quota_per_usd": quota_per_usd,
             "page_size": 200,
             "page_start": 1,  # Pull 才用到；默认 1-based
+            # 新令牌直接挂到本货源，不走 _resolve_supply_source_for_taiji 的推断
+            "supply_source_id": ss.id,
         }
         if not ds:
             ds = DataSource(
