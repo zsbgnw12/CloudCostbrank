@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, case, delete, update
+from sqlalchemy import select, func, case, delete, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.scope import (
@@ -14,27 +14,42 @@ from app.auth.scope import (
 )
 from app.models.project import Project
 from app.models.supply_source import SupplySource
+from app.services.alert_targets import AlertTargets, billing_matches_project_row, parse_alert_targets
+
+
+def _parse_targets_or_422(target_id: str | None) -> AlertTargets:
+    try:
+        return parse_alert_targets(target_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+def _projects_of(targets: AlertTargets):
+    """WHERE clause for the ``Project`` rows a rule's targets refer to."""
+    return or_(
+        Project.external_project_id.in_(targets.external_ids),
+        Project.id.in_(targets.project_row_ids),
+    )
 
 
 async def _ensure_rule_target_in_scope(
     db: AsyncSession, principal, target_type: str | None, target_id: str | None
 ) -> None:
     """校验告警规则的 target 必须在用户 provider 范围内。
-    target_id 是单个 external_project_id 或逗号分隔列表(monthly_budget_multi)。
+    target_id 是单个引用或逗号分隔列表(monthly_budget_multi),引用为
+    external_project_id 或 pid:<Project.id>(见 app.services.alert_targets)。
     """
+    targets = _parse_targets_or_422(target_id)
     if has_full_access(principal):
         return
-    if not target_id:
+    if not targets:
         return  # 全局规则,所有云管都可以创建
-    ids = [p.strip() for p in target_id.split(",") if p.strip()]
-    if not ids:
-        return
     rows = (
         await db.execute(
             select(SupplySource.provider)
             .distinct()
             .join(Project, Project.supply_source_id == SupplySource.id)
-            .where(Project.external_project_id.in_(ids))
+            .where(_projects_of(targets))
         )
     ).scalars().all()
     target_providers = set(rows)
@@ -64,8 +79,11 @@ async def _visible_rule_ids(db: AsyncSession, principal) -> list[int] | None:
         if not r.target_id:
             visible.append(r.id)
             continue
-        ids = [p.strip() for p in r.target_id.split(",") if p.strip()]
-        if not ids:
+        try:
+            targets = parse_alert_targets(r.target_id)
+        except ValueError:
+            continue  # 引用格式非法:无法判定归属,不对受限用户展示
+        if not targets:
             visible.append(r.id)
             continue
         provs = (
@@ -73,7 +91,7 @@ async def _visible_rule_ids(db: AsyncSession, principal) -> list[int] | None:
                 select(SupplySource.provider)
                 .distinct()
                 .join(Project, Project.supply_source_id == SupplySource.id)
-                .where(Project.external_project_id.in_(ids))
+                .where(_projects_of(targets))
             )
         ).scalars().all()
         if set(provs) & user_providers:
@@ -425,100 +443,79 @@ async def rule_status(
     if not rules:
         return []
 
-    # 收集所有 target_id 涉及的 project external_id(单 + 多 group 拆开)
-    all_project_ids: set[str] = set()
-    rule_pids: dict[int, list[str]] = {}  # rule.id → 该规则关联的 project_ids
+    # 收集所有 target_id 涉及的引用(单 + 多 group 拆开)。键即引用本身:
+    # 旧规则是 external_project_id,新规则是 pid:<Project.id>。
+    external_ids: set[str] = set()
+    row_ids: set[int] = set()
+    rule_pids: dict[int, list[str]] = {}  # rule.id → 该规则关联的引用
     for r in rules:
-        if r.target_id and "," in r.target_id:
-            ids = [p.strip() for p in r.target_id.split(",") if p.strip()]
-        else:
-            ids = [r.target_id] if r.target_id else []
-        rule_pids[r.id] = ids
-        all_project_ids.update(ids)
+        try:
+            targets = parse_alert_targets(r.target_id)
+        except ValueError:
+            targets = AlertTargets()
+        rule_pids[r.id] = targets.refs
+        external_ids.update(targets.external_ids)
+        row_ids.update(targets.project_row_ids)
 
-    if not all_project_ids:
+    if not external_ids and not row_ids:
         return []
-
-    project_ids = list(all_project_ids)
 
     # Project info(provider 仅来自 supply_sources)
     proj_result = await db.execute(
         select(Project, SupplySource)
         .join(SupplySource, Project.supply_source_id == SupplySource.id)
-        .where(Project.external_project_id.in_(project_ids))
+        .where(_projects_of(AlertTargets([], list(row_ids), list(external_ids))))
     )
     acct_map: dict[str, tuple] = {}
     for proj, ss in proj_result.all():
-        acct_map[proj.external_project_id] = (proj.id, proj.name, ss.provider, proj.external_project_id)
+        info = (proj.id, proj.name, ss.provider, proj.external_project_id)
+        if proj.external_project_id in external_ids:
+            acct_map[proj.external_project_id] = info
+        if proj.id in row_ids:
+            acct_map[f"pid:{proj.id}"] = info
+
+    async def cost_by_ref(*conditions) -> dict[str, Decimal]:
+        """每个引用在给定条件下的费用合计。pid 引用只计其数据源的账单行。"""
+        totals: dict[str, Decimal] = {}
+        if external_ids:
+            legacy = await db.execute(
+                select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
+                .where(BillingData.project_id.in_(external_ids), *conditions)
+                .group_by(BillingData.project_id)
+            )
+            totals.update({r.project_id: r.total for r in legacy})
+        if row_ids:
+            scoped = await db.execute(
+                select(Project.id, func.sum(BillingData.cost).label("total"))
+                .join(Project, billing_matches_project_row())
+                .where(Project.id.in_(row_ids), *conditions)
+                .group_by(Project.id)
+            )
+            totals.update({f"pid:{r.id}": r.total for r in scoped})
+        return totals
 
     # Per-project monthly cost(本月)
-    monthly_result = await db.execute(
-        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .where(
-            BillingData.date >= month_start,
-            BillingData.date < month_end,
-            BillingData.project_id.in_(project_ids),
-        )
-        .group_by(BillingData.project_id)
-    )
-    monthly_map: dict[str, Decimal] = {r.project_id: r.total for r in monthly_result}
+    monthly_map = await cost_by_ref(BillingData.date >= month_start, BillingData.date < month_end)
 
     # Per-project lifetime cost(全期累计 — 给 account_lifetime_quota 用)
-    lifetime_result = await db.execute(
-        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .where(BillingData.project_id.in_(project_ids))
-        .group_by(BillingData.project_id)
-    )
-    lifetime_map: dict[str, Decimal] = {r.project_id: r.total for r in lifetime_result}
+    lifetime_map = await cost_by_ref()
 
     # Per-project yearly cost (当年累计 — 给 yearly_budget_multi 用)
-    yearly_result = await db.execute(
-        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .where(
-            BillingData.date >= year_start,
-            BillingData.date < year_end,
-            BillingData.project_id.in_(project_ids),
-        )
-        .group_by(BillingData.project_id)
-    )
-    yearly_map: dict[str, Decimal] = {r.project_id: r.total for r in yearly_result}
+    yearly_map = await cost_by_ref(BillingData.date >= year_start, BillingData.date < year_end)
 
     # 自定义时间段费用映射（为每个规则单独查询）
     custom_period_map: dict[int, dict[str, Decimal]] = {}
     for rule in rules:
         if rule.threshold_type == "custom_period_budget_multi" and rule.start_date and rule.end_date:
             period_end = rule.end_date + dt.timedelta(days=1)
-            custom_result = await db.execute(
-                select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-                .where(
-                    BillingData.date >= rule.start_date,
-                    BillingData.date < period_end,
-                    BillingData.project_id.in_(project_ids),
-                )
-                .group_by(BillingData.project_id)
+            custom_period_map[rule.id] = await cost_by_ref(
+                BillingData.date >= rule.start_date, BillingData.date < period_end
             )
-            custom_period_map[rule.id] = {r.project_id: r.total for r in custom_result}
 
-    daily_result = await db.execute(
-        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .where(
-            BillingData.date == yesterday,
-            BillingData.project_id.in_(project_ids),
-        )
-        .group_by(BillingData.project_id)
-    )
-    daily_map: dict[str, Decimal] = {r.project_id: r.total for r in daily_result}
+    daily_map = await cost_by_ref(BillingData.date == yesterday)
 
     day_before = yesterday - dt.timedelta(days=1)
-    prev_daily_result = await db.execute(
-        select(BillingData.project_id, func.sum(BillingData.cost).label("total"))
-        .where(
-            BillingData.date == day_before,
-            BillingData.project_id.in_(project_ids),
-        )
-        .group_by(BillingData.project_id)
-    )
-    prev_daily_map: dict[str, Decimal] = {r.project_id: r.total for r in prev_daily_result}
+    prev_daily_map = await cost_by_ref(BillingData.date == day_before)
 
     items: list[RuleStatus] = []
     for rule in rules:
@@ -558,14 +555,14 @@ async def rule_status(
             triggered = actual >= threshold * 0.9
             display_name = info[1] if info else pid
             display_provider = info[2] if info else "unknown"
-            display_pid = pid
+            display_pid = info[3] if info else pid
         else:
             # 单 project 类型
             pid = pids[0] if pids else ""
             info = acct_map.get(pid)
             display_name = info[1] if info else pid
             display_provider = info[2] if info else "unknown"
-            display_pid = pid
+            display_pid = info[3] if info else pid
 
             if rule.threshold_type == "daily_absolute":
                 actual = float(daily_map.get(pid, Decimal("0")))

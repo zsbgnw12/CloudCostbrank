@@ -16,6 +16,7 @@ from app.models.alert import AlertRule, AlertHistory, Notification
 from app.models.billing import BillingData
 from app.models.project import Project
 from app.models.supply_source import SupplySource
+from app.services.alert_targets import AlertTargets, billing_target_filter, parse_alert_targets
 
 # 服务账号配额告警的固定触发百分比(产品规则:达到配额的 90% 即告警)。
 # 想做成可配置的话,把它挪到 alert_rules 加列存。
@@ -30,6 +31,34 @@ def _cost():
     阈值(threshold_value)历史上以 USD 设定,这样保证评估口径与阈值一致、绝不混币。
     """
     return func.coalesce(BillingData.cost_usd, BillingData.cost)
+
+
+def _single_target_filter(target_id: str):
+    """Billing filter for a single-project rule.
+
+    A legacy rule (plain external id) keeps its original exact-match semantics;
+    only a ``pid:`` reference is narrowed to its project's data source.
+    """
+    targets = parse_alert_targets(target_id)
+    if not targets.project_row_ids:
+        return BillingData.project_id == target_id
+    return billing_target_filter(targets)
+
+
+def _target_labels(session: Session, targets: AlertTargets) -> list[str]:
+    """Human-readable names for a rule's targets, in their written order."""
+    external_by_row = {}
+    if targets.project_row_ids:
+        rows = session.query(Project.id, Project.external_project_id).filter(
+            Project.id.in_(targets.project_row_ids)
+        ).all()
+        external_by_row = {f"pid:{row_id}": ext for row_id, ext in rows}
+    return [external_by_row.get(ref, ref) for ref in targets.refs]
+
+
+def _describe_targets(session: Session, targets: AlertTargets) -> str:
+    labels = _target_labels(session, targets)
+    return f"{len(labels)} 个项目({', '.join(labels[:3])}{'...' if len(labels) > 3 else ''})"
 
 
 _sync_engine = None
@@ -124,18 +153,15 @@ def _check_monthly_budget_multi(session: Session, rule: AlertRule, today: dt.dat
     quota = float(rule.threshold_value or 0)
     if quota <= 0:
         return
-    raw_ids = (rule.target_id or "").strip()
-    if not raw_ids:
-        return
-    project_ids = [p.strip() for p in raw_ids.split(",") if p.strip()]
-    if not project_ids:
+    targets = parse_alert_targets(rule.target_id)
+    if not targets:
         return
 
     month_start = today.replace(day=1)
     month_end = today + dt.timedelta(days=1)
 
     used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
-        BillingData.project_id.in_(project_ids),
+        billing_target_filter(targets),
         BillingData.date >= month_start,
         BillingData.date < month_end,
     ).scalar() or Decimal("0")
@@ -145,7 +171,7 @@ def _check_monthly_budget_multi(session: Session, rule: AlertRule, today: dt.dat
         return
 
     pct = (used_f / quota * 100) if quota else 0
-    proj_desc = f"{len(project_ids)} 个项目({', '.join(project_ids[:3])}{'...' if len(project_ids) > 3 else ''})"
+    proj_desc = _describe_targets(session, targets)
     message = (
         f"告警 [{rule.name}]: 多项目月费用合计超预算!"
         f" {proj_desc} 本月累计 ${used_f:.2f},预算 ${quota:.2f} (使用率 {pct:.1f}%)"
@@ -167,18 +193,15 @@ def _check_yearly_budget_multi(session: Session, rule: AlertRule, today: dt.date
     quota = float(rule.threshold_value or 0)
     if quota <= 0:
         return
-    raw_ids = (rule.target_id or "").strip()
-    if not raw_ids:
-        return
-    project_ids = [p.strip() for p in raw_ids.split(",") if p.strip()]
-    if not project_ids:
+    targets = parse_alert_targets(rule.target_id)
+    if not targets:
         return
 
     year_start = today.replace(month=1, day=1)
     year_end = today + dt.timedelta(days=1)
 
     used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
-        BillingData.project_id.in_(project_ids),
+        billing_target_filter(targets),
         BillingData.date >= year_start,
         BillingData.date < year_end,
     ).scalar() or Decimal("0")
@@ -188,7 +211,7 @@ def _check_yearly_budget_multi(session: Session, rule: AlertRule, today: dt.date
         return
 
     pct = (used_f / quota * 100) if quota else 0
-    proj_desc = f"{len(project_ids)} 个项目({', '.join(project_ids[:3])}{'...' if len(project_ids) > 3 else ''})"
+    proj_desc = _describe_targets(session, targets)
     message = (
         f"告警 [{rule.name}]: 多项目年费用合计超预算!"
         f" {proj_desc} {today.year} 年累计 ${used_f:.2f},年预算 ${quota:.2f} (使用率 {pct:.1f}%)"
@@ -219,11 +242,8 @@ def _check_custom_period_budget_multi(session: Session, rule: AlertRule, today: 
         logger.warning(f"Rule {rule.id} ({rule.name}): custom_period_budget_multi requires start_date and end_date")
         return
 
-    raw_ids = (rule.target_id or "").strip()
-    if not raw_ids:
-        return
-    project_ids = [p.strip() for p in raw_ids.split(",") if p.strip()]
-    if not project_ids:
+    targets = parse_alert_targets(rule.target_id)
+    if not targets:
         return
 
     # 使用配置的时间段
@@ -231,7 +251,7 @@ def _check_custom_period_budget_multi(session: Session, rule: AlertRule, today: 
     period_end = rule.end_date + dt.timedelta(days=1)  # 包含结束日期当天
 
     used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
-        BillingData.project_id.in_(project_ids),
+        billing_target_filter(targets),
         BillingData.date >= period_start,
         BillingData.date < period_end,
     ).scalar() or Decimal("0")
@@ -241,7 +261,7 @@ def _check_custom_period_budget_multi(session: Session, rule: AlertRule, today: 
         return
 
     pct = (used_f / quota * 100) if quota else 0
-    proj_desc = f"{len(project_ids)} 个项目({', '.join(project_ids[:3])}{'...' if len(project_ids) > 3 else ''})"
+    proj_desc = _describe_targets(session, targets)
     period_desc = f"{period_start.strftime('%Y-%m-%d')} 至 {rule.end_date.strftime('%Y-%m-%d')}"
     message = (
         f"告警 [{rule.name}]: 自定义时间段多项目费用合计超预算!"
@@ -267,7 +287,7 @@ def _check_account_lifetime_quota(session: Session, rule: AlertRule):
         return
 
     used = session.query(func.coalesce(func.sum(_cost()), 0)).filter(
-        BillingData.project_id == target_id
+        _single_target_filter(target_id)
     ).scalar() or Decimal("0")
     used_f = float(used)
     threshold_amount = quota * ACCOUNT_QUOTA_TRIGGER_PCT
@@ -277,7 +297,7 @@ def _check_account_lifetime_quota(session: Session, rule: AlertRule):
 
     pct = (used_f / quota * 100) if quota else 0
     message = (
-        f"告警 [{rule.name}]: 服务账号 {target_id} 总配额预警!"
+        f"告警 [{rule.name}]: 服务账号 {", ".join(_target_labels(session, parse_alert_targets(target_id)))} 总配额预警!"
         f" 累计已用 ${used_f:.2f},配额 ${quota:.2f} (使用率 {pct:.1f}%,"
         f"触发阈值 {int(ACCOUNT_QUOTA_TRIGGER_PCT * 100)}%)"
     )
@@ -292,7 +312,7 @@ def _get_daily_cost(session: Session, rule: AlertRule, day: dt.date) -> Decimal 
         BillingData.date < next_day,
     )
     if rule.target_type == "project" and rule.target_id:
-        query = query.filter(BillingData.project_id == rule.target_id)
+        query = query.filter(_single_target_filter(rule.target_id))
     elif rule.target_type == "provider" and rule.target_id:
         query = query.filter(BillingData.provider == rule.target_id)
     return query.scalar()
@@ -334,7 +354,7 @@ def _get_monthly_cost(session: Session, rule: AlertRule, start: dt.date, end: dt
         BillingData.date < end,
     )
     if rule.target_type == "project" and rule.target_id:
-        query = query.filter(BillingData.project_id == rule.target_id)
+        query = query.filter(_single_target_filter(rule.target_id))
     elif rule.target_type == "provider" and rule.target_id:
         query = query.filter(BillingData.provider == rule.target_id)
     return query.scalar()
@@ -348,7 +368,7 @@ def _evaluate_rule(session: Session, rule: AlertRule, start: dt.date, end: dt.da
     )
 
     if rule.target_type == "project" and rule.target_id:
-        query = query.filter(BillingData.project_id == rule.target_id)
+        query = query.filter(_single_target_filter(rule.target_id))
     elif rule.target_type == "provider" and rule.target_id:
         query = query.filter(BillingData.provider == rule.target_id)
 
