@@ -4,7 +4,7 @@ import datetime as dt
 import io
 import logging
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -424,7 +424,11 @@ def auto_create_gcp_projects(rows: list[dict]) -> int:
 def _resolve_supply_source_for_taiji(session, data_source_id: int) -> tuple[int, str]:
     """
     为新 taiji token 选定挂靠的 SupplySource。优先级：
-      1. 同一 data_source_id 下已有的 Project 的归属 —— 复用（保证后续 token 归属稳定）
+      0. 数据源 config 里显式指定的 supply_source_id —— 站点接入时就定好归属，
+         不靠下面的推断。指定的货源不存在或不是 taiji 时记警告并继续往下推断，
+         而不是拒绝建项目：建不出项目的令牌，其账单行会匹配不到任何项目。
+      1. 同一 data_source_id 下已有 Project 的归属 —— 取其中项目最多的货源，
+         并列时取 id 最小者，保证结果确定（部分令牌被手动改挂后也不会随机漂移）
       2. 非"未分配资源组"的唯一用户级 taiji SupplySource —— 归档到用户建的业务组
       3. 兜底：回落到"未分配资源组 / taiji"（歧义或用户还没建业务组）
     返回 (supply_source_id, 归属描述)
@@ -435,10 +439,30 @@ def _resolve_supply_source_for_taiji(session, data_source_id: int) -> tuple[int,
     )
     from app.models.supplier import Supplier as _Supplier
 
-    # 1) 同 DS 已有 Project 的归属
+    # 0) 数据源显式指定
+    ds_config = session.execute(
+        select(DataSource.config).where(DataSource.id == data_source_id)
+    ).scalar_one_or_none() or {}
+    configured = ds_config.get("supply_source_id")
+    if configured is not None:
+        ss = None
+        try:
+            ss = session.get(SupplySource, int(configured))
+        except (TypeError, ValueError):
+            pass
+        if ss is not None and ss.provider == "taiji":
+            return ss.id, f"DS#{data_source_id} config 指定 SS#{ss.id}"
+        logger.warning(
+            "DS#%s config.supply_source_id=%r 不是有效的 taiji 货源，改用推断归属",
+            data_source_id, configured,
+        )
+
+    # 1) 同 DS 已有 Project 中最多的归属
     existing_ss = session.execute(
         select(Project.supply_source_id)
         .where(Project.data_source_id == data_source_id)
+        .group_by(Project.supply_source_id)
+        .order_by(func.count().desc(), Project.supply_source_id)
         .limit(1)
     ).scalar_one_or_none()
     if existing_ss:
