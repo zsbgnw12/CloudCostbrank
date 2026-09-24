@@ -306,7 +306,9 @@ def _parse_blob_day(payload: dict, *, default_date: str) -> list[dict]:
                     "project_name": project_id,
                     "product": model_name or "unknown",
                     "usage_type": "",
-                    "region": None,
+                    # '' 而非 NULL：PG 唯一索引里 NULL <> NULL，NULL region 会让
+                    # ON CONFLICT 去重失效；与 taiji-ingest-day 入库口径保持一致。
+                    "region": "",
                     "cost_type": "regular",
                     "cost": round(cost, 6),
                     "usage_quantity": float(total_tokens),
@@ -425,7 +427,8 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
             "project_name": project_name,
             "product": model_name,
             "usage_type": channel or "",
-            "region": channel or None,
+            # 无 channel 时存 '' 而非 NULL（理由同 _parse_blob_day，保证唯一键可去重）
+            "region": channel or "",
             # billing_data.cost_type NOT NULL；taiji 全部按常规消费记账。
             "cost_type": "regular",
             "cost": round(cost_usd, 6),
@@ -452,7 +455,7 @@ def _aggregate_logs(raw_logs: list[dict], *, quota_per_usd: int) -> list[dict]:
                 "date": date,
                 "model_id": model_name,
                 "model_name": model_name,
-                "region": None,  # token_usage 按 (date, ds, model) 聚合，不按 channel 拆
+                "region": "",  # token_usage 按 (date, ds, model) 聚合，不按 channel 拆；'' 保证唯一键可去重
                 "request_count": acc["request_count"],
                 "input_tokens": acc["prompt_tokens"],
                 "output_tokens": acc["completion_tokens"],
